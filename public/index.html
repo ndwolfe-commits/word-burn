@@ -67,7 +67,7 @@ function h(tag, a, ...kids) {
 function put(...kids) { app.textContent = ""; for (const k of kids.flat()) if (k != null && k !== false) app.append(k); }
 const standalone = () => window.navigator.standalone === true || (window.matchMedia && matchMedia("(display-mode: standalone)").matches);
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-const VERSION = "v2";
+const VERSION = "v3";
 const scale = v => Math.min(100, Math.sqrt(v) * 300);   // volume bar: square-root scale so quiet speech is visible
 const secs = ms => (ms / 1000).toFixed(2) + "s";
 const median = a => { if (!a.length) return 0; const s = [...a].sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
@@ -87,17 +87,17 @@ async function openMic() {
   micInfo = {label: tr ? tr.label : "", rate: actx.sampleRate, channels: st.channelCount || "", recorder: window.MediaRecorder ? (recType || "default") : "none"};
 }
 function closeMic() { try { stream && stream.getTracks().forEach(t => t.stop()); } catch (e) {} try { actx && actx.close(); } catch (e) {} stream = actx = analyser = null; }
-function level() { analyser.getFloatTimeDomainData(buf); let s = 0; for (let i = 0; i < buf.length; i++) s += buf[i] * buf[i]; return Math.sqrt(s / buf.length); }
+function level() { if (!analyser) return 0; analyser.getFloatTimeDomainData(buf); let s = 0; for (let i = 0; i < buf.length; i++) s += buf[i] * buf[i]; return Math.sqrt(s / buf.length); }
 
 /* ---------- one word ---------- */
-let run = null, timer = 0, quietest = Infinity;
+let run = null, timer = 0, preTimer = 0, quietest = Infinity;
 function listenFor(word) {
   return new Promise(resolve => {
     const wordEl = document.getElementById("word"), card = wordEl.parentNode, bar = document.getElementById("lvl"), mark = document.getElementById("mark");
     wordEl.className = "dot"; wordEl.textContent = ""; wordEl.style.fontSize = "";
     // 1. measure the room with nothing on screen, and wait for quiet before showing the word
     const quiet = []; const qStart = performance.now();
-    const pre = setInterval(() => {
+    const pre = preTimer = setInterval(() => {
       quiet.push(level()); if (quiet.length > 30) quiet.shift();          // keep the last 300 ms
       const waited = performance.now() - qStart;
       if (waited < 500) return;
@@ -155,6 +155,93 @@ function verdict(r) {
   return ["ok", "Clean"];
 }
 
+/* ---------- keeping and copying results ---------- */
+function saveReport(text) { try { localStorage.setItem("wb.last", text); } catch (e) {} }
+function lastReport() { try { return localStorage.getItem("wb.last") || ""; } catch (e) { return ""; } }
+async function copy(text, btn) {
+  try { await navigator.clipboard.writeText(text); btn.textContent = "Copied. Paste it to Claude."; }
+  catch (e) { btn.textContent = "Could not copy. Screenshot the details below instead."; }
+}
+
+/* ---------- dictation-only test: does the phone's own dictation name the word? ---------- */
+function startDictation() {
+  let rec; try { rec = new SR(); } catch (e) { return home("Dictation could not start: " + (e.name || e)); }
+  rec.lang = "en-GB"; rec.continuous = true; rec.interimResults = true; rec.maxAlternatives = 3;
+  const D = {started: Date.now(), rows: [], i: -1, errors: [], ends: 0, shownAt: 0, cur: null, done: false, timer: 0};
+  put(
+    h("p", {class: "muted small", id: "count"}, "Starting dictation…"),
+    h("div", {class: "card"}, h("span", {id: "word", class: "dot"})),
+    h("div", {class: "fb", id: "fb", "aria-live": "polite"}, "Allow speech recognition if asked"),
+    h("button", {class: "ghost", onclick: () => endDictationNow && endDictationNow()}, "Stop and show results"));
+  const wordEl = document.getElementById("word"), card = wordEl.parentNode;
+  function next() {
+    clearTimeout(D.timer); if (D.done) return;
+    if (D.cur) { D.rows.push(D.cur); D.cur = null; }
+    const last3 = D.rows.slice(-3);
+    if (last3.length === 3 && last3.every(r => !r.heard)) { D.errors.push("gave up: nothing heard for three words in a row"); return endDictation(); }
+    D.i++; if (D.i >= WORDS.length) return endDictation();
+    const word = WORDS[D.i];
+    D.cur = {word, heard: "", alts: [], firstMs: null, final: false};
+    document.getElementById("count").textContent = "Word " + (D.i + 1) + " of " + WORDS.length;
+    wordEl.className = ""; wordEl.textContent = word;
+    wordEl.style.fontSize = Math.max(28, Math.min(104, (card.clientWidth - 32) / (Math.max(3, word.length) * .6))) + "px";
+    D.shownAt = performance.now();
+    D.timer = setTimeout(next, 6000);
+  }
+  function endDictation() {
+    if (D.done) return; D.done = true; clearTimeout(D.timer);
+    if (D.cur) { D.rows.push(D.cur); D.cur = null; }
+    try { rec.onend = null; rec.stop(); } catch (e) {}
+    dictationResults(D);
+  }
+  rec.onstart = () => { if (D.i < 0) next(); };
+  rec.onresult = e => {
+    if (!D.cur || D.done) return;
+    if (performance.now() - D.shownAt < 150) return;                 // leftovers from the word before
+    const r = e.results[e.results.length - 1]; if (!r) return;
+    const text = r[0].transcript.trim(); if (!text) return;
+    if (D.cur.firstMs == null) D.cur.firstMs = performance.now() - D.shownAt;
+    D.cur.heard = text; D.cur.alts = Array.from(r).map(a => a.transcript.trim());
+    const fb = document.getElementById("fb"); if (fb) { fb.className = "fb"; fb.textContent = "Heard: " + text; }
+    if (r.isFinal) { D.cur.final = true; clearTimeout(D.timer); D.timer = setTimeout(next, 700); }
+  };
+  rec.onerror = e => { D.errors.push((e.error || "error") + " at word " + (D.i + 1)); };
+  rec.onend = () => { D.ends++; if (D.done) return; try { rec.start(); } catch (e) { D.errors.push("could not restart: " + (e.name || e)); endDictation(); } };
+  try { rec.start(); } catch (e) { return home("Dictation could not start: " + (e.name || e)); }
+  setTimeout(() => { if (D.i < 0 && !D.done) { D.errors.push("never started"); endDictation(); } }, 8000);
+  endDictationNow = endDictation;
+}
+let endDictationNow = null;
+const spoken = t => t.toLowerCase().replace(/[^a-z ]/g, "").split(/\s+/).filter(Boolean);
+const US = {favourite: "favorite"};
+function dictationResults(D) {
+  const n = D.rows.length, hit = r => [r.heard, ...r.alts].some(t => { const w = spoken(t); return w.includes(r.word) || w.includes(US[r.word] || r.word); });
+  const got = D.rows.filter(r => r.heard), right = D.rows.filter(hit), times = got.map(r => r.firstMs);
+  const report = [
+    "Word Burn dictation test " + VERSION, new Date(D.started).toISOString(),
+    "opened as: " + (standalone() ? "home-screen app" : "browser tab"),
+    "words shown: " + n + ", something heard: " + got.length + ", right word: " + right.length,
+    "median time to first text: " + (times.length ? secs(median(times)) : "n/a"),
+    "session ended and restarted: " + D.ends + " times", "errors: " + (D.errors.join("; ") || "none"),
+    "device: " + navigator.userAgent,
+    ...D.rows.map(r => r.word + " | heard: " + (r.heard || "-") + (r.alts.length > 1 ? " [also: " + r.alts.slice(1).join(", ") + "]" : "") + " | " + (r.firstMs == null ? "no text" : Math.round(r.firstMs) + "ms to first text") + (r.final ? "" : " (not settled)") + " | " + (hit(r) ? "RIGHT" : "wrong")),
+  ].join("\n");
+  saveReport(report);
+  put(
+    h("h1", null, n ? "Dictation got " + right.length + " of " + n : "Dictation did not run"),
+    h("div", {class: "box"},
+      h("p", null, "Opened as: ", h("b", null, standalone() ? "a home-screen app" : "a browser tab")),
+      h("p", null, "Heard something for ", h("b", null, got.length + " of " + n), ", the right word for ", h("b", {class: right.length >= n * .9 && n ? "ok" : "bad"}, right.length + " of " + n), "."),
+      D.errors.length ? h("p", {class: "bad small"}, "Errors: " + D.errors.join("; ")) : null),
+    h("button", {class: "ghost", onclick: e => copy(report, e.currentTarget)}, "Copy results for Claude"),
+    h("button", {class: "go", onclick: () => home()}, "Back"),
+    h("h2", null, "Each word"),
+    h("table", null,
+      h("tr", null, h("th", null, "Word"), h("th", null, "Heard"), h("th", null, "")),
+      D.rows.map(r => h("tr", null, h("td", null, r.word), h("td", null, r.heard || "–"), h("td", {class: (hit(r) ? "ok" : "bad") + " small"}, hit(r) ? "Right" : "Wrong")))),
+    h("h2", null, "Details"), h("pre", null, report));
+}
+
 /* ---------- screens ---------- */
 function home(err) {
   put(
@@ -165,12 +252,14 @@ function home(err) {
       standalone() ? null : h("p", {class: "muted small"}, "Run it once here. Then tap Share, Add to Home Screen, open it from the new icon and run it again. That second run is the one that matters.")),
     err ? h("div", {class: "box"}, h("p", {class: "bad"}, "The microphone did not open."), h("p", {class: "small"}, err), h("p", {class: "muted small"}, "If you tapped Don't Allow: Settings, Apps, Safari, Microphone, set it to Ask or Allow, then try again.")) : null,
     h("p", {class: "small muted"}, "20 words appear one at a time. Say each one out loud as soon as you see it. It moves on by itself. Hold the phone about a forearm away."),
-    SR ? h("label", {class: "tick small"}, h("input", {type: "checkbox", id: "dict"}), h("span", null, "Also try the phone's own dictation, to see what word it thinks you said. Leave this off for the first run.")) : h("p", {class: "small muted"}, "The phone's own dictation is not offered to this page, so only timing is tested."),
-    h("button", {class: "go", onclick: start}, "Start"),
+    h("button", {class: "go", onclick: start}, "Start timing test"),
+    SR ? h("button", {class: "ghost", onclick: startDictation}, "Start dictation test") : h("p", {class: "small muted"}, "The phone's own dictation is not offered to this page, so only timing can be tested."),
+    SR ? h("p", {class: "small muted"}, "The dictation test is separate. It asks the phone's own dictation which word you said, and does no timing.") : null,
+    lastReport() ? h("button", {class: "ghost", onclick: e => copy(lastReport(), e.currentTarget)}, "Copy the last results again") : null,
     h("p", {class: "small muted"}, "Nothing is sent anywhere. Recordings stay on this phone and disappear when you close the page."));
 }
 async function start() {
-  const dictation = !!(document.getElementById("dict") && document.getElementById("dict").checked);
+  const dictation = false;   // dictation has its own test: running both at once can cut the microphone off
   try { await openMic(); } catch (e) { closeMic(); return home((e && e.name ? e.name + ": " : "") + (e && e.message ? e.message : String(e))); }
   quietest = Infinity;
   run = {dictation, results: [], started: Date.now()};
@@ -179,7 +268,7 @@ async function start() {
     h("div", {class: "card"}, h("span", {id: "word", class: "dot"})),
     h("div", {class: "meter"}, h("i", {id: "lvl"}), h("b", {id: "mark"})),
     h("div", {class: "fb", id: "fb", "aria-live": "polite"}, "Get ready"),
-    h("button", {class: "ghost", onclick: () => { clearInterval(timer); finish(); }}, "Stop and show results"));
+    h("button", {class: "ghost", onclick: () => { clearInterval(timer); clearInterval(preTimer); finish(); }}, "Stop and show results"));
   await new Promise(r => setTimeout(r, 900));
   for (let i = 0; i < WORDS.length && run; i++) {
     document.getElementById("count").textContent = "Word " + (i + 1) + " of " + WORDS.length;
@@ -210,7 +299,8 @@ function finish() {
   ].join("\n");
   const good = n >= 5 && got.length >= n * .9;
   const player = new Audio();
-  const copyBtn = h("button", {class: "ghost", onclick: async () => { try { await navigator.clipboard.writeText(report); copyBtn.textContent = "Copied. Paste it to Claude."; } catch (e) { copyBtn.textContent = "Could not copy. Screenshot this page instead."; } }}, "Copy results for Claude");
+  saveReport(report);
+  const copyBtn = h("button", {class: "ghost", onclick: e => copy(report, e.currentTarget)}, "Copy results for Claude");
   put(
     h("h1", null, n ? (good ? "It can hear you" : got.length ? "It heard some of them" : "It heard nothing") : "No words tried"),
     h("div", {class: "box"},
