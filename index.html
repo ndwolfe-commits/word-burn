@@ -115,6 +115,9 @@ a{color:var(--cool)}
 <body>
 <canvas id="fx"></canvas>
 <div id="app"></div>
-<script type="module" src="game.js"></script>
+<script type="module">
+const boot = v => import("./game." + v + ".js");
+fetch("version.json", { cache: "no-store" }).then(r => r.json()).then(j => boot(j.v), () => boot("07428c98"));
+</script>
 </body>
 </html>
