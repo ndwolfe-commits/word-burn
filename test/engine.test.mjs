@@ -65,6 +65,12 @@ test("a weak reader is not flooded: the side pile stays capped", () => {
   const { c, rate } = play(15, 10);
   assert.ok(c.side <= 12, "side pile " + c.side); assert.ok(rate >= 0.5, "success rate " + rate.toFixed(2));
 });
+test("harder words turn up quickly for a reader who keeps hitting the probes", () => {
+  const S = fresh(), R = newRound(); const probes = [];
+  for (let i = 0; i < ROUND; i++) { const card = pick(S, R, 300, () => 0.5); if (card.kind === "probe") probes.push(RANK.get(card.key)); apply(S, R, card, "fast", 600, 300); }
+  assert.ok(probes.length >= 5, "probes in one round: " + probes.length);
+  assert.ok(probes[probes.length - 1] >= 300, "last probe reached rank " + probes[probes.length - 1] + " of " + ALLKEYS.length);
+});
 test("the same word is not shown twice in a row", () => {
   let x = 7; const rand = () => (x = (x * 1664525 + 1013904223) % 4294967296) / 4294967296;
   const S = fresh(), R = newRound(); let prev = null;
