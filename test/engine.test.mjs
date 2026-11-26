@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { ALLKEYS, RANK, fresh, grade, pick, apply, newRound, matches, instantMs, counts, IV, ROUND } from "../public/engine.js";
+import { ALLKEYS, RANK, fresh, grade, pick, apply, newRound, matches, instantMs, counts, IV, ROUND, mergeState, cleanState, dropStale, tokens } from "../public/engine.js";
 
 test("the word sets load, with duplicates removed", () => { assert.equal(ALLKEYS.length, 507); assert.equal(RANK.get("the"), 0); });
 
@@ -69,4 +69,32 @@ test("the same word is not shown twice in a row", () => {
   let x = 7; const rand = () => (x = (x * 1664525 + 1013904223) % 4294967296) / 4294967296;
   const S = fresh(), R = newRound(); let prev = null;
   for (let i = 0; i < 60; i++) { const card = pick(S, R, 300, rand); if (!card) break; assert.notEqual(card.key, prev); prev = card.key; apply(S, R, card, rand() < 0.5 ? "miss" : "fast", 700, 300); }
+});
+
+test("two phones' progress join without losing either one's words", () => {
+  const a = fresh(), b = fresh();
+  grade(a, "the", "fast", 600, 100); grade(a, "said", "miss", 0, 100); a.updated = 1000;
+  grade(b, "said", "miss", 0, 100); grade(b, "said", "fast", 700, 100); grade(b, "people", "fast", 650, 100); b.updated = 2000;
+  const m = mergeState(a, b), m2 = mergeState(b, a);
+  assert.deepEqual(Object.keys(m.w).sort(), ["people", "said", "the"]);
+  assert.equal(m.w.said.n, 2, "the copy with more reads of a word wins");
+  assert.equal(JSON.stringify(m), JSON.stringify(m2), "the order of joining does not matter");
+  assert.equal(JSON.stringify(mergeState(m, a)), JSON.stringify(m), "joining again changes nothing");
+});
+test("a reset on one phone is not undone by an older copy", () => {
+  const old = fresh(); grade(old, "the", "fast", 600, 100); old.updated = 5000;
+  const wiped = fresh(); wiped.gen = 1; wiped.updated = 6000;
+  assert.deepEqual(mergeState(old, wiped).w, {}); assert.deepEqual(mergeState(wiped, old).w, {});
+});
+test("progress from outside is cleaned before use", () => {
+  assert.equal(cleanState(null), null); assert.equal(cleanState({ w: 3 }), null);
+  const c = cleanState({ w: { the: { s: 99, n: 2 }, "not-a-word": { s: 2 }, said: "x" }, level: 99999, rt: [700, "x"], rounds: [{ t: 1, n: 20 }, 5], extra: "<script>" });
+  assert.deepEqual(Object.keys(c.w), ["the"]); assert.equal(c.w.the.s, 7); assert.equal(c.level, ALLKEYS.length); assert.deepEqual(c.rt, [700]); assert.equal(c.rounds.length, 1); assert.equal(c.extra, undefined);
+});
+
+test("a late revision of the previous word is not taken as an answer to the next one", () => {
+  assert.deepEqual(dropStale(["The"], tokens("the")), [], "the same word again is ignored");
+  assert.deepEqual(dropStale(["The said", "The sad"], tokens("The")), ["said", "sad"], "new words after it are kept");
+  assert.deepEqual(dropStale(["Because"], tokens("the")), ["Because"], "a different phrase is kept whole");
+  assert.deepEqual(dropStale(["People"], null), ["People"]);
 });

@@ -11,7 +11,7 @@ export const HARD_CAP = 10;                      // words in practice before any
 export const ROUND = 20;
 export const MAX_CHECKS = 5;                      // checks of burned words per round, so new words keep flowing
 
-export const fresh = () => ({ v: 1, w: {}, level: 20, rt: [], burned: 0, streak: { d: "", n: 0 }, best: { combo: 0 }, rounds: [] });
+export const fresh = () => ({ v: 1, gen: 0, updated: 0, w: {}, level: 20, rt: [], burned: 0, streak: { d: "", n: 0 }, best: { combo: 0 }, rounds: [], log: [] });
 export const day = (d = new Date()) => Math.floor((d.getTime() - d.getTimezoneOffset() * 6e4) / 864e5);
 
 // --- matching what was heard against the word shown ---
@@ -20,6 +20,13 @@ export function matches(heard, key) {
   const toks = tokens(heard), ok = new Set([tokens(key).join(""), ...(ALT[key.toLowerCase()] || "").split(" ").filter(Boolean)]);
   for (let i = 0; i < toks.length; i++) { if (ok.has(toks[i])) return true; if (i + 1 < toks.length && ok.has(toks[i] + toks[i + 1])) return true; }
   return false;
+}
+
+// Dictation keeps revising a phrase after the game has moved on. Given what it last said for the previous word,
+// drop that part from a new result. Returns the texts that are about the current word (possibly none).
+export function dropStale(texts, stale) {
+  if (!stale || !stale.length) return texts;
+  return texts.map(t => { const tk = tokens(t); return stale.every((x, i) => tk[i] === x) ? tk.slice(stale.length).join(" ") : t; }).filter(Boolean);
 }
 
 // --- what counts as instant for this reader ---
@@ -88,4 +95,30 @@ export function apply(S, R, card, out, rt, today = day()) {
   return g;
 }
 export function counts(S, words = ALLKEYS) { const c = { un: 0, side: 0, burned: 0, locked: 0 }; for (const k of words) c[band(S, k)]++; return c; }
+
+// --- joining two copies of one player's progress (two phones, or a phone and the family store) ---
+// Each word keeps whichever record has been read more times. A reset (higher gen) wins outright.
+export function mergeState(a, b) {
+  if (!a) return b; if (!b) return a;
+  if ((a.gen | 0) !== (b.gen | 0)) return (a.gen | 0) > (b.gen | 0) ? a : b;
+  const hi = (a.updated | 0) >= (b.updated | 0) ? a : b, lo = hi === a ? b : a, w = {};
+  for (const k of [...new Set([...Object.keys(a.w || {}), ...Object.keys(b.w || {})])].sort()) { const x = hi.w[k], y = lo.w[k]; w[k] = !y ? x : !x ? y : (y.n > x.n ? y : x); }
+  const byT = list => { const m = new Map(); for (const r of list) if (r && r.t) m.set(r.t, r); return [...m.values()].sort((p, q) => p.t - q.t); };
+  const out = Object.assign(fresh(), { gen: hi.gen | 0, updated: Math.max(a.updated | 0, b.updated | 0), w, level: hi.level, rt: (hi.rt || []).slice(-20), streak: hi.streak || { d: "", n: 0 },
+    best: { combo: Math.max((a.best && a.best.combo) || 0, (b.best && b.best.combo) || 0) }, rounds: byT([...(lo.rounds || []), ...(hi.rounds || [])]).slice(-60), log: byT([...(lo.log || []), ...(hi.log || [])]).slice(-30) });
+  out.burned = Object.values(w).filter(x => x.s >= 2).length;
+  return out;
+}
+// A state from storage or the network: keep only what the game understands.
+export function cleanState(x) {
+  if (!x || typeof x !== "object" || typeof x.w !== "object" || !x.w) return null;
+  const w = {}; let n = 0;
+  for (const k of Object.keys(x.w)) { if (!RANK.has(k) || ++n > 600) continue; const v = x.w[k]; if (!v || typeof v !== "object") continue; const o = { s: Math.max(1, Math.min(7, v.s | 0)), d: v.d | 0, r: v.r | 0, n: v.n | 0, m: v.m | 0, b: v.b | 0 }; if (v.k) o.k = 1; w[k] = o; }
+  const num = (v, d) => (Number.isFinite(v) ? v : d), str = v => String(v == null ? "" : v).slice(0, 40);
+  return Object.assign(fresh(), { gen: x.gen | 0, updated: num(x.updated, 0), w, level: Math.max(0, Math.min(ALLKEYS.length, x.level | 0)), rt: (Array.isArray(x.rt) ? x.rt : []).filter(Number.isFinite).slice(-20),
+    streak: { d: str(x.streak && x.streak.d), n: (x.streak && x.streak.n) | 0 }, best: { combo: (x.best && x.best.combo) | 0 },
+    rounds: (Array.isArray(x.rounds) ? x.rounds : []).filter(r => r && Number.isFinite(r.t)).slice(-60).map(r => ({ t: r.t, n: r.n | 0, fast: r.fast | 0, miss: r.miss | 0, voice: r.voice ? 1 : 0 })),
+    log: (Array.isArray(x.log) ? x.log : []).filter(r => r && Number.isFinite(r.t)).slice(-30).map(r => ({ t: r.t, k: str(r.k), heard: str(r.heard) })),
+    burned: Object.values(w).filter(v => v.s >= 2).length });
+}
 export { LISTS };
