@@ -1,8 +1,8 @@
 // Word Burn: the screen, the voice and the fireworks. The rules of the game live in engine.js.
-import { LISTS, ALLKEYS, ROUND, fresh, matches, instantMs, pick, apply, newRound, counts, band, mergeState, cleanState, dropStale, tokens } from "./engine.07428c98.js";
+import { LISTS, ALLKEYS, ROUND, fresh, matches, instantMs, pick, apply, newRound, counts, band, mergeState, cleanState, dropStale, tokens } from "./engine.d684892a.js";
 
-const BUILD = "07428c98";
-const VERSION = "game v3 (" + BUILD + ")";
+const BUILD = "d684892a";
+const VERSION = "game v4 (" + BUILD + ")";
 const OLDKEY = "wb.game.v1", SETKEY = "wb.settings.v1", DEVKEY = "wb.device.v2", stateKey = id => "wb.state." + id;
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 const store = { get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} } };
@@ -48,6 +48,12 @@ async function sync() {
   finally { net.busy = false; }
 }
 async function pullFamily() { if (!D.family) return; try { takePlayers((await call("GET", "family/" + D.family)).players); } catch (e) {} }
+
+// A plain record of the last game: what was shown, what the phone heard, and anything the microphone or dictation did.
+const DBG = []; let dbg0 = performance.now();
+function dbg(what, data) { DBG.push(Math.round(performance.now() - dbg0) + " " + what + (data === undefined ? "" : " " + (typeof data === "string" ? data : JSON.stringify(data)))); if (DBG.length > 500) DBG.shift(); }
+const saveDbg = () => store.set("wb.debug", DBG);
+const standalone = () => window.navigator.standalone === true || (window.matchMedia && matchMedia("(display-mode: standalone)").matches);
 
 const app = document.getElementById("app");
 function h(tag, a, ...kids) {
@@ -98,7 +104,7 @@ function say(text, quiet) {
     if (!canSay) return res(false);
     try {
       const u = new SpeechSynthesisUtterance(text); u.lang = "en-GB"; u.rate = .85; if (quiet) u.volume = 0;
-      let done = false; const end = ok => { if (!done) { done = true; res(ok); } };
+      let done = false; const end = ok => { if (!done) { done = true; if (!quiet) dbg("spoke", ok ? "ok" : "no end signal"); res(ok); } };
       u.onend = () => end(true); u.onerror = () => end(false);
       speechSynthesis.cancel(); speechSynthesis.speak(u); setTimeout(() => end(false), 3000);
     } catch (e) { res(false); }
@@ -106,31 +112,54 @@ function say(text, quiet) {
 }
 
 /* ---------- ears: the microphone times the start, the phone's dictation names the word ---------- */
-const ears = { stream: null, analyser: null, buf: null, rec: null, want: false, down: false, poll: 0, lvl: 0, quiet: [], quietest: Infinity, onText: null, onLevel: null, error: "", stale: null, lastRaw: [], lastFinal: true };
-async function openEars() {
-  ears.error = "";
-  if (!SR) throw new Error("no dictation");
+const ears = { stream: null, analyser: null, buf: null, rec: null, want: false, down: false, poll: 0, lvl: 0, quiet: [], quietest: Infinity, onText: null, onLevel: null, error: "", stale: null, lastRaw: [], lastFinal: true, live: false, ignoreUntil: 0, peak: 0 };
+function startRec() {
   const rec = ears.rec = new SR(); rec.lang = "en-GB"; rec.continuous = true; rec.interimResults = true; rec.maxAlternatives = 3;
+  rec.onstart = () => { ears.live = true; dbg("dictation on"); };
   rec.onresult = e => {
     const r = e.results[e.results.length - 1]; if (!r) return;
     let texts = Array.from(r).map(a => a.transcript.trim()).filter(Boolean); if (!texts.length) return;
+    const raw = texts.slice();
+    if (performance.now() < ears.ignoreUntil) { dbg("text ignored", raw); return; }
     ears.lastRaw = tokens(texts[0]); ears.lastFinal = r.isFinal;
-    if (ears.stale) { texts = dropStale(texts, ears.stale); if (r.isFinal) ears.stale = null; if (!texts.length) return; }   // the previous word, still settling
-    if (ears.onText) ears.onText(texts, r.isFinal);
+    if (ears.stale) { texts = dropStale(texts, ears.stale); if (r.isFinal) ears.stale = null; }     // the previous word, still settling
+    dbg(r.isFinal ? "TEXT" : "text", texts.length === raw.length && texts[0] === raw[0] ? raw : { heard: raw, kept: texts });
+    if (texts.length && ears.onText) ears.onText(texts, r.isFinal);
   };
-  rec.onerror = e => { ears.error = e.error || "error"; };
-  rec.onend = () => { if (!ears.want) return; try { rec.start(); } catch (e) { ears.down = true; if (ears.onDown) ears.onDown(); } };
+  rec.onerror = e => { ears.error = e.error || "error"; dbg("dictation error", ears.error); };
+  rec.onend = () => {
+    ears.live = false; dbg("dictation ended");
+    if (!ears.want || rec !== ears.rec) return;
+    try { rec.start(); dbg("dictation restart asked"); } catch (e) { dbg("dictation restart refused", String(e.name || e)); ears.down = true; if (ears.onDown) ears.onDown(); }
+  };
+  rec.start();
+}
+// From a tap: make sure dictation is running again, and forget anything half-heard.
+function reviveEars() {
+  ears.stale = null; ears.lastFinal = true; ears.ignoreUntil = performance.now() + 400;
+  if (ears.live && !ears.down) return;
+  dbg("reviving dictation from a tap");
+  try { ears.rec.onend = null; ears.rec.stop(); } catch (e) {}
+  ears.down = false; ears.error = "";
+  try { startRec(); } catch (e) { dbg("revive refused", String(e.name || e)); ears.down = true; }
+}
+async function openEars() {
+  ears.error = ""; ears.live = false; ears.ignoreUntil = 0;
+  if (!SR) throw new Error("no dictation");
   ears.want = true; ears.down = false;
-  rec.start();                                                       // must run straight from the tap
+  startRec();                                                        // must run straight from the tap
   ears.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: true, autoGainControl: false } });
+  const tr = ears.stream.getAudioTracks()[0];
+  if (tr) { tr.onmute = () => dbg("microphone muted"); tr.onunmute = () => dbg("microphone back"); tr.onended = () => dbg("microphone ended"); }
   if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
   if (actx.state === "suspended") await actx.resume();
+  actx.onstatechange = () => dbg("audio " + actx.state);
   ears.analyser = actx.createAnalyser(); ears.analyser.fftSize = 512; ears.analyser.smoothingTimeConstant = 0;
   actx.createMediaStreamSource(ears.stream).connect(ears.analyser); ears.buf = new Float32Array(512);
   ears.quiet = []; ears.quietest = Infinity; ears.stale = null; ears.lastFinal = true;
   ears.poll = setInterval(() => {
     ears.analyser.getFloatTimeDomainData(ears.buf); let s = 0; for (let i = 0; i < 512; i++) s += ears.buf[i] * ears.buf[i];
-    ears.lvl = Math.sqrt(s / 512); if (ears.onLevel) ears.onLevel(ears.lvl, performance.now());
+    ears.lvl = Math.sqrt(s / 512); if (ears.lvl > ears.peak) ears.peak = ears.lvl; if (ears.onLevel) ears.onLevel(ears.lvl, performance.now());
   }, 10);
 }
 function closeEars() {
@@ -156,15 +185,16 @@ function quietRoom() {
 function listen(key, t0, floor, limitMs = 6000) {
   return new Promise(res => {
     const low = Math.min(0.04, Math.max(floor * 5, 0.0015)), line = Math.min(0.08, Math.max(floor * 12, 0.004));
-    let seg = 0, high = 0, onset = null, heard = "", settled = false, wrongTimer = 0;
+    let seg = 0, high = 0, onset = null, heard = "", settled = false, wrongTimer = 0; ears.peak = 0;
     const end = out => {
       if (settled) return; settled = true; clearTimeout(giveUp); clearTimeout(wrongTimer); ears.onLevel = ears.onText = null;
       ears.stale = heard && !ears.lastFinal ? ears.lastRaw : null;     // dictation may keep revising this phrase after we move on
+      dbg("result", Object.assign({ peak: +ears.peak.toFixed(4), dictationOn: ears.live }, out));
       res(out);
     };
     ears.onLevel = (v, now) => {
       if (onset != null) return;
-      if (now - t0 > 120 && v > low) { if (!seg) seg = now; if (v > line) { if (!high) high = now; if (now - high >= 30) { onset = seg - t0; clearTimeout(giveUp); giveUp = setTimeout(() => end(heard ? { right: false, onset, heard } : { unheard: true }), 3200); } } else high = 0; }
+      if (now - t0 > 120 && v > low) { if (!seg) seg = now; if (v > line) { if (!high) high = now; if (now - high >= 30) { onset = seg - t0; dbg("voice started", Math.round(onset)); clearTimeout(giveUp); giveUp = setTimeout(() => end(heard ? { right: false, onset, heard } : { unheard: true }), 3200); } } else high = 0; }
       else { high = 0; seg = 0; }
     };
     ears.onText = (texts, final) => {
@@ -186,12 +216,13 @@ async function startRound() {
   let voice = voiceMode(), opening = null;
   if (voice) opening = openEars();                                    // straight from the tap
   say(" ", true);                                                     // phones only let a page speak later if it first speaks from a tap
+  DBG.length = 0; dbg0 = performance.now(); dbg("game", { version: VERSION, voice, homeScreen: standalone(), instant: instantMs(S), level: S.level, device: navigator.userAgent });
   R = newRound(); T = { voice, outs: [], score: 0, combo: 0, maxCombo: 0, burned: [], later: [], fastest: null, stop: false, retried: {} };
   playScreen();
   if (voice) {
     setSay("", "Getting ready to listen…");
-    try { await opening; } catch (e) { closeEars(); T.voice = false; setSay("", "No microphone this time", "A grown-up can tap instead."); drawFoot(); await wait(1500); }
-    if (T.voice) ears.onDown = () => { if (!R) return; sheet(h("div", null, h("h1", null, "Listening stopped"), h("button", { class: "play", onclick: () => { closeSheet(); try { ears.rec.start(); ears.down = false; } catch (e) {} } }, "Keep going"))); };
+    try { await opening; } catch (e) { dbg("could not open ears", String((e && e.name) || e)); closeEars(); T.voice = false; setSay("", "No microphone this time", "A grown-up can tap instead."); drawFoot(); await wait(1500); }
+    if (T.voice) ears.onDown = () => { if (!R || document.querySelector(".sheet")) return; dbg("asked for a tap to keep listening"); sheet(h("div", null, h("h1", null, "Listening stopped"), h("button", { class: "play", onclick: () => { closeSheet(); reviveEars(); } }, "Keep going"))); };
   }
   await wait(500);
   while (R && !T.stop && R.i < ROUND) {
@@ -210,6 +241,7 @@ async function playCard(card) {
   wordEl.style.fontSize = Math.max(30, Math.min(112, (cardEl.clientWidth - 36) / (Math.max(3, card.key.length) * .6))) + "px";
   await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
   const t0 = performance.now(), limit = instantMs(S);
+  dbg("SHOW " + card.key, { kind: card.kind, instant: limit, room: +floor.toFixed(4) });
   drawFoot("go");
   let out, rt = 0, heard = "";
   if (T.voice) {
@@ -228,6 +260,7 @@ async function settle(card, out, rt, heard) {
   const wordEl = document.getElementById("word"), cardEl = document.getElementById("card");
   T.tap = null; drawFoot("wait");                                    // answer buttons go as soon as one is used
   const limit = instantMs(S), g = apply(S, R, card, out, rt);
+  dbg("OUTCOME " + card.key, { out, ms: Math.round(rt), heard }); saveDbg();
   T.outs.push(out); drawDots();
   if (out === "miss") { T.combo = 0; if (heard) { S.log.push({ t: Date.now(), k: card.key, heard: String(heard).slice(0, 40) }); S.log = S.log.slice(-30); } }
   else { if (out === "fast") { T.combo++; if (rt && (!T.fastest || rt < T.fastest.rt)) T.fastest = { key: card.key, rt }; } else T.combo = 0; T.maxCombo = Math.max(T.maxCombo, T.combo); }
@@ -238,22 +271,22 @@ async function settle(card, out, rt, heard) {
     wordEl.className = "burn"; fireworks(true); sfx.fast(); setSay("fast", T.combo >= 3 ? T.combo + " in a row!" : "Burned!", rt ? secs(rt) : ""); await wait(750);
   } else if (out === "slow") {                                        // 2. right, but not instant: it smoulders and comes back
     wordEl.className = "ember"; sfx.slow(); setSay("slow", "Right! But too slow to burn", rt ? "You took " + secs(rt) + ". Under " + secs(limit) + " and it burns." : "Say it the moment you see it."); await wait(1500); drawShelf();
-  } else {                                                            // 3. a miss: hear it, then say it back
-    sfx.miss(); setSay("miss", "This word is", ""); await wait(250);
-    await say(card.key); if (!R || T.stop) return;
-    if (T.voice) {
-      await wait(700);                                               // let the phone's own voice clear the dictation
-      const floor = await quietRoom(); if (!R || T.stop) return;
-      setSay("miss", "Your turn. Say it!", ""); drawFoot("go");
-      const echo = await listen(card.key, performance.now(), floor, 4000); if (!R || T.stop) return;
-      drawFoot("wait");
-      if (echo.right) { fireworks(false); sfx.slow(); setSay("slow", "That’s it!", "It’s coming back soon."); await wait(700); }
-    } else await wait(900);
+  } else {                                                            // 3. a miss: show it, say it, and wait for a tap
+    sfx.miss(); setSay("miss", "This word is “" + show(card.key) + "”", ""); await wait(250);
+    say(card.key);
+    await new Promise(res => {
+      const foot = document.getElementById("foot"); foot.textContent = "";
+      const go = () => { T.tap = null; if (T.voice && R && !T.stop) reviveEars(); res(); };
+      T.tap = go;
+      foot.append(h("button", { class: "next", onclick: go }, "Next"), canSay ? h("button", { class: "again", onclick: () => say(card.key) }, "Hear it again") : null);
+    });
+    if (!R || T.stop) return;
+    document.getElementById("foot").textContent = "";
     wordEl.className = "drop"; await wait(450); drawShelf(); await wait(200);
   }
 }
 function endRound() {
-  const T0 = T; closeEars(); R = null;
+  const T0 = T; dbg("round over"); saveDbg(); closeEars(); R = null;
   const n = T0.outs.length; if (!n) return home();
   const today = new Date().toDateString(), y = new Date(Date.now() - 864e5).toDateString();
   if (S.streak.d !== today) S.streak = { d: today, n: S.streak.d === y ? S.streak.n + 1 : 1 };
@@ -363,6 +396,7 @@ function grownUps() {
     h("p", { class: "small" }, "A word read right and instantly burns. Instant is set from the reader’s own speed, currently within " + secs(instantMs(S)) + (S.rt.length < 6 ? " (a starting value until it has timed a few reads)" : "") + "."),
     h("p", { class: "small" }, "Right but slow, or wrong, and the word comes back every few cards until it gets three instant reads in a row. After a miss the phone says the word and asks for it back. Burned words get one check a week later. It tries a harder word every third new card to find the reader’s edge."),
     h("p", { class: "small" }, "The voice never leaves the phone. With a family code, the player’s name and which words they have read are stored online so other phones can pick them up."),
+    h("button", { class: "ghost", onclick: async e => { const b = e.currentTarget, lines = store.get("wb.debug") || []; try { await navigator.clipboard.writeText("Word Burn " + VERSION + "\n" + lines.join("\n")); b.textContent = "Copied. Paste it to Claude."; } catch (x) { b.textContent = "Could not copy."; } } }, "Copy the last game’s record for Claude"),
     h("p", { class: "small muted" }, VERSION + " · ", h("a", { href: "test.html" }, "microphone test")),
     reset));
 }

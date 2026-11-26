@@ -1,5 +1,5 @@
 // Word Burn engine: which word comes next, and what a reading does to it. No screen or microphone code here.
-import { LISTS, ALT } from "./words.07428c98.js";
+import { LISTS, ALT } from "./words.d684892a.js";
 
 export const ALLKEYS = [];
 { const seen = new Set(); for (const l of LISTS) for (const w of l.words) if (!seen.has(w)) { seen.add(w); ALLKEYS.push(w); } }
@@ -11,7 +11,7 @@ export const HARD_CAP = 10;                      // words in practice before any
 export const ROUND = 20;
 export const MAX_CHECKS = 5;                      // checks of burned words per round, so new words keep flowing
 
-export const fresh = () => ({ v: 1, gen: 0, updated: 0, w: {}, level: 20, rt: [], burned: 0, streak: { d: "", n: 0 }, best: { combo: 0 }, rounds: [], log: [] });
+export const fresh = () => ({ v: 1, gen: 0, updated: 0, w: {}, level: 30, step: 40, rt: [], burned: 0, streak: { d: "", n: 0 }, best: { combo: 0 }, rounds: [], log: [] });
 export const day = (d = new Date()) => Math.floor((d.getTime() - d.getTimezoneOffset() * 6e4) / 864e5);
 
 // --- matching what was heard against the word shown ---
@@ -85,7 +85,11 @@ export function pick(S, R, today = day(), rand = Math.random) {
 // Record a reading: grade it, move the frontier if it was a probe, advance the round.
 export function apply(S, R, card, out, rt, today = day()) {
   const g = grade(S, card.key, out, rt, today), rank = RANK.get(card.key);
-  if (card.kind === "probe") S.level = out === "fast" ? Math.min(ALLKEYS.length, rank + 25) : out === "slow" ? rank + 5 : Math.max(0, rank - 15);
+  if (card.kind === "probe") {                                       // search for the reader's edge: leap further after each hit, halve the leap after a stumble
+    const step = S.step || 40;
+    if (out === "fast") { S.level = Math.min(ALLKEYS.length, rank + step); S.step = Math.min(160, step * 2); }
+    else { S.level = out === "slow" ? rank + 5 : Math.max(0, rank - Math.round(step / 2)); S.step = Math.max(10, Math.round(step / 2)); }
+  }
   else if (card.kind === "easy" && rank >= S.level) S.level = rank + 1;
   if (card.kind === "probe" || card.kind === "easy") R.newCount++;
   if (card.kind === "side") R.lastSide = R.i;
@@ -104,7 +108,7 @@ export function mergeState(a, b) {
   const hi = (a.updated | 0) >= (b.updated | 0) ? a : b, lo = hi === a ? b : a, w = {};
   for (const k of [...new Set([...Object.keys(a.w || {}), ...Object.keys(b.w || {})])].sort()) { const x = hi.w[k], y = lo.w[k]; w[k] = !y ? x : !x ? y : (y.n > x.n ? y : x); }
   const byT = list => { const m = new Map(); for (const r of list) if (r && r.t) m.set(r.t, r); return [...m.values()].sort((p, q) => p.t - q.t); };
-  const out = Object.assign(fresh(), { gen: hi.gen | 0, updated: Math.max(a.updated | 0, b.updated | 0), w, level: hi.level, rt: (hi.rt || []).slice(-20), streak: hi.streak || { d: "", n: 0 },
+  const out = Object.assign(fresh(), { gen: hi.gen | 0, updated: Math.max(a.updated | 0, b.updated | 0), w, level: hi.level, step: hi.step || 40, rt: (hi.rt || []).slice(-20), streak: hi.streak || { d: "", n: 0 },
     best: { combo: Math.max((a.best && a.best.combo) || 0, (b.best && b.best.combo) || 0) }, rounds: byT([...(lo.rounds || []), ...(hi.rounds || [])]).slice(-60), log: byT([...(lo.log || []), ...(hi.log || [])]).slice(-30) });
   out.burned = Object.values(w).filter(x => x.s >= 2).length;
   return out;
@@ -115,7 +119,7 @@ export function cleanState(x) {
   const w = {}; let n = 0;
   for (const k of Object.keys(x.w)) { if (!RANK.has(k) || ++n > 600) continue; const v = x.w[k]; if (!v || typeof v !== "object") continue; const o = { s: Math.max(1, Math.min(7, v.s | 0)), d: v.d | 0, r: v.r | 0, n: v.n | 0, m: v.m | 0, b: v.b | 0 }; if (v.k) o.k = 1; w[k] = o; }
   const num = (v, d) => (Number.isFinite(v) ? v : d), str = v => String(v == null ? "" : v).slice(0, 40);
-  return Object.assign(fresh(), { gen: x.gen | 0, updated: num(x.updated, 0), w, level: Math.max(0, Math.min(ALLKEYS.length, x.level | 0)), rt: (Array.isArray(x.rt) ? x.rt : []).filter(Number.isFinite).slice(-20),
+  return Object.assign(fresh(), { gen: x.gen | 0, updated: num(x.updated, 0), w, level: Math.max(0, Math.min(ALLKEYS.length, x.level | 0)), step: Math.max(10, Math.min(160, (x.step | 0) || 40)), rt: (Array.isArray(x.rt) ? x.rt : []).filter(Number.isFinite).slice(-20),
     streak: { d: str(x.streak && x.streak.d), n: (x.streak && x.streak.n) | 0 }, best: { combo: (x.best && x.best.combo) | 0 },
     rounds: (Array.isArray(x.rounds) ? x.rounds : []).filter(r => r && Number.isFinite(r.t)).slice(-60).map(r => ({ t: r.t, n: r.n | 0, fast: r.fast | 0, miss: r.miss | 0, voice: r.voice ? 1 : 0 })),
     log: (Array.isArray(x.log) ? x.log : []).filter(r => r && Number.isFinite(r.t)).slice(-30).map(r => ({ t: r.t, k: str(r.k), heard: str(r.heard) })),
