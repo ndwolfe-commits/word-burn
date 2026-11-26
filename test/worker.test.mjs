@@ -42,3 +42,14 @@ test("a family holds at most twelve players, and names are cleaned", async () =>
 test("without the store set up, the game still gets a clear answer", async () => {
   const r = await worker.fetch(new Request("https://x.test/api/health"), { ASSETS: { fetch: async () => new Response("page") } }); assert.equal(r.status, 503);
 });
+
+test("the build fingerprints the scripts and the page loads whichever version.json names", async () => {
+  const { execFileSync } = await import("node:child_process"); const fs = await import("node:fs");
+  execFileSync("node", ["scripts/build.mjs"]);
+  const v = JSON.parse(fs.readFileSync("dist/version.json", "utf8")).v; assert.match(v, /^[0-9a-f]{8}$/);
+  for (const f of ["game", "engine", "words"]) assert.ok(fs.existsSync(`dist/${f}.${v}.js`), f);
+  assert.ok(fs.readFileSync(`dist/game.${v}.js`, "utf8").includes(`"./engine.${v}.js"`));
+  assert.ok(fs.readFileSync(`dist/engine.${v}.js`, "utf8").includes(`"./words.${v}.js"`));
+  const page = fs.readFileSync("dist/index.html", "utf8"); assert.ok(page.includes('fetch("version.json", { cache: "no-store" })')); assert.ok(!page.includes('src="game.js"'));
+  assert.ok(fs.existsSync("dist/test.html") && fs.existsSync("dist/icon-180.png"));
+});

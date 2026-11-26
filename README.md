@@ -16,9 +16,11 @@ It runs as a web page that is added to the phone's home screen. The microphone t
 
 ## How it is served
 
-Two copies, from the same files:
+`node scripts/build.mjs` builds `dist/` from `public/`. It fingerprints the script files so a phone that reopens the game always loads the newest version.
 
-- **GitHub Pages** (the `gh-pages` branch, a copy of `public/`). No family sync: progress stays on the phone.
+Two copies, from the same build:
+
+- **GitHub Pages** (the `gh-pages` branch, a copy of `dist/`). No family sync: progress stays on the phone.
 - **Cloudflare** (`wrangler.json`, deployed by `.github/workflows/ci.yml` after the tests pass). This copy has family sync. It deploys only once the repository has the secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
 
 ## What the family store holds
