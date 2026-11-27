@@ -19,7 +19,13 @@ const tag = '<script type="module" src="game.js"></script>', page = read("index.
 if (!page.includes(tag)) throw new Error("index.html has no game script tag");
 const loader = `<script type="module">
 const boot = v => import("./game." + v + ".js");
-fetch("version.json", { cache: "no-store" }).then(r => r.json()).then(j => boot(j.v), () => boot("${v}"));
+let loaded = "${v}";
+const current = () => fetch("version.json?t=" + Date.now(), { cache: "no-store" }).then(r => r.json()).then(j => j.v);
+current().then(v => { loaded = v; return boot(v); }, () => boot(loaded));
+// A phone often brings the page back from memory instead of loading it again. When it comes back, check for a
+// newer version and reload, unless a round is being played.
+const recheck = () => { if (document.hidden || document.getElementById("card")) return; current().then(v => { if (v !== loaded) location.reload(); }, () => {}); };
+document.addEventListener("visibilitychange", recheck); addEventListener("pageshow", e => { if (e.persisted) recheck(); });
 </script>`;
 fs.writeFileSync(path.join(out, "index.html"), page.replace(tag, loader));
 fs.writeFileSync(path.join(out, "version.json"), JSON.stringify({ v }) + "\n");

@@ -50,6 +50,6 @@ test("the build fingerprints the scripts and the page loads whichever version.js
   for (const f of ["game", "engine", "words"]) assert.ok(fs.existsSync(`dist/${f}.${v}.js`), f);
   assert.ok(fs.readFileSync(`dist/game.${v}.js`, "utf8").includes(`"./engine.${v}.js"`));
   assert.ok(fs.readFileSync(`dist/engine.${v}.js`, "utf8").includes(`"./words.${v}.js"`));
-  const page = fs.readFileSync("dist/index.html", "utf8"); assert.ok(page.includes('fetch("version.json", { cache: "no-store" })')); assert.ok(!page.includes('src="game.js"'));
+  const page = fs.readFileSync("dist/index.html", "utf8"); assert.ok(page.includes('fetch("version.json?t=" + Date.now(), { cache: "no-store" })')); assert.ok(page.includes("location.reload()")); assert.ok(!page.includes('src="game.js"'));
   assert.ok(fs.existsSync("dist/test.html") && fs.existsSync("dist/icon-180.png"));
 });
