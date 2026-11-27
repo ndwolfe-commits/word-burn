@@ -97,3 +97,14 @@ test("progress from outside is cleaned before use", () => {
   const c = cleanState({ w: { the: { s: 99, n: 2 }, "not-a-word": { s: 2 }, said: "x" }, level: 99999, rt: [700, "x"], rounds: [{ t: 1, n: 20 }, 5], extra: "<script>" });
   assert.deepEqual(Object.keys(c.w), ["the"]); assert.equal(c.w.the.s, 7); assert.equal(c.level, ALLKEYS.length); assert.deepEqual(c.rt, [700]); assert.equal(c.rounds.length, 1); assert.equal(c.extra, undefined);
 });
+test("a round opens with words of four letters or more and ends with a run of very short ones", () => {
+  const S = fresh(), R = newRound(), seen = [];
+  for (let i = 0; i < ROUND; i++) { const card = pick(S, R, 300, () => 0.5); seen.push(card); apply(S, R, card, "fast", 600, 300); }
+  assert.ok(seen.slice(0, ROUND - 5).every(c => c.key.length >= 4), seen.map(c => c.key).join(" "));
+  assert.ok(seen.slice(ROUND - 5).every(c => c.kind === "sprint" && c.key.length < 4));
+});
+test("a reader who never stumbles keeps getting hard words after reaching the top of the list", () => {
+  const S = fresh(); let probes = 0;
+  for (let r = 0; r < 3; r++) { const R = newRound(); for (let i = 0; i < ROUND; i++) { const card = pick(S, R, 300, () => 0.5); if (r === 2 && card.kind === "probe") probes++; apply(S, R, card, "fast", 600, 300); } }
+  assert.ok(probes >= 5, "probes in the third round: " + probes);
+});

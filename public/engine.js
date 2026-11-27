@@ -9,6 +9,7 @@ export const IV = [0, 0, 1, 3, 7, 16, 35, 90];   // days until the next check, b
 export const CAP = 6;                            // words in practice before harder probes stop
 export const HARD_CAP = 10;                      // words in practice before any new word stops
 export const ROUND = 20;
+export const SPRINT = 5;                           // cards at the end of a round given to the very short words
 export const MAX_CHECKS = 5;                      // checks of burned words per round, so new words keep flowing
 
 export const fresh = () => ({ v: 1, gen: 0, updated: 0, w: {}, level: 30, step: 40, found: 0, rt: [], burned: 0, streak: { d: "", n: 0 }, best: { combo: 0 }, rounds: [], log: [] });
@@ -50,7 +51,7 @@ export function grade(S, key, out, rt, today = day()) {
 
 // --- choosing the next card ---
 // kinds: "side" a word in practice coming back, "check" a burned word due for its check,
-//        "easy" the next unseen word in order, "probe" an unseen word out ahead, "win" a burned word for an easy success.
+//        "easy" the next unseen word of four letters or more, "probe" an unseen word out ahead, "sprint" a very short unseen word, "win" a burned word for an easy success.
 export function newRound() { return { i: 0, last: {}, lastSide: -9, newCount: 0, checks: 0, prev: null }; }
 export function pick(S, R, today = day(), rand = Math.random) {
   const seenNow = k => k in R.last, age = k => (k in R.last ? R.last[k] : -99);
@@ -63,10 +64,16 @@ export function pick(S, R, today = day(), rand = Math.random) {
   else if (side.length < HARD_CAP) {
     const unseen = ALLKEYS.filter(k => !S.w[k] && !seenNow(k));
     if (unseen.length) {
-      // While still looking for the reader's edge: easy, probe, easy, probe. Once found: easy, easy, probe.
-      const probeTurn = (S.found ? R.newCount % 3 === 2 : R.newCount % 2 === 1) && side.length < CAP;
-      const ahead = unseen.find(k => RANK.get(k) >= S.level);
-      other = probeTurn && ahead && ahead !== unseen[0] ? { key: ahead, kind: "probe" } : { key: unseen[0], kind: "easy" };
+      // Words of four letters or more carry the game. The very short ones ("I", "the") are swept up in a quick run at the end of each round.
+      const long = unseen.filter(k => k.length >= 4), tiny = unseen.filter(k => k.length < 4);
+      if (tiny.length && (R.i >= ROUND - SPRINT || !long.length)) other = { key: tiny[0], kind: "sprint" };
+      else if (long.length) {
+        // While still looking for the reader's edge: easy, probe, easy, probe. Once found: easy, easy, probe.
+        const probeTurn = (S.found ? R.newCount % 3 === 2 : R.newCount % 2 === 1) && side.length < CAP;
+        // A reader who has not stumbled by the top of the list is probed from the top down.
+        const ahead = long.find(k => RANK.get(k) >= S.level) || (S.found ? null : long[long.length - 1]);
+        other = probeTurn && ahead && ahead !== long[0] ? { key: ahead, kind: "probe" } : { key: long[0], kind: "easy" };
+      }
     }
   }
   if (!other) { const wins = ALLKEYS.filter(k => S.w[k] && S.w[k].s >= 2 && !seenNow(k)); if (wins.length) other = { key: wins[Math.floor(rand() * wins.length)], kind: "win" }; }
