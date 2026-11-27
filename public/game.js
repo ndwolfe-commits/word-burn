@@ -2,7 +2,7 @@
 import { LISTS, SCHOOL, ALLKEYS, ROUND, fresh, matches, instantMs, pick, apply, newRound, counts, band, mergeState, cleanState } from "./engine.js";
 
 const BUILD = "dev";
-const SHORT = "v9";
+const SHORT = "v10";
 const VERSION = "game " + SHORT + " (" + BUILD + ")";
 const OLDKEY = "wb.game.v1", SETKEY = "wb.settings.v1", DEVKEY = "wb.device.v2", stateKey = id => "wb.state." + id;
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;

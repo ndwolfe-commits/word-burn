@@ -53,13 +53,13 @@ function play(frontier, rounds, seed = 1) {
 test("a reader with a frontier at 180 mostly succeeds while the easy words are swept up", () => {
   const { S, rate, c } = play(180, 12);
   assert.ok(rate >= 0.8, "success rate " + rate.toFixed(2));
-  assert.ok(c.burned + c.locked >= 110, "burned " + (c.burned + c.locked));
+  assert.ok(c.burned + c.locked >= 100, "burned " + (c.burned + c.locked));
   assert.ok(c.side <= 12, "side pile " + c.side);
   assert.ok(S.level >= 150 && S.level <= 260, "frontier estimate " + S.level);
 });
 test("a strong reader gets through the whole list in a bounded number of rounds", () => {
-  const { c, cards } = play(707, 55);
-  assert.equal(c.un, 0, "unseen left " + c.un); assert.ok(cards <= 55 * ROUND);
+  const { c, cards } = play(707, 60);
+  assert.equal(c.un, 0, "unseen left " + c.un); assert.ok(cards <= 60 * ROUND);
 });
 test("a weak reader is not flooded: the side pile stays capped", () => {
   const { c, rate } = play(15, 10);
@@ -108,4 +108,14 @@ test("a reader who never stumbles keeps getting hard words after reaching the to
   const S = fresh(); let probes = 0;
   for (let r = 0; r < 3; r++) { const R = newRound(); for (let i = 0; i < ROUND; i++) { const card = pick(S, R, 300, () => 0.5); if (r === 2 && card.kind === "probe") probes++; apply(S, R, card, "fast", 600, 300); } }
   assert.ok(probes >= 5, "probes in the third round: " + probes);
+});
+test("a miss is followed by a word the reader already owns", () => {
+  const S = fresh(), R = newRound(); let after = 0, lifted = 0;
+  for (let i = 0; i < 60; i++) {
+    const card = pick(S, R, 300, () => 0.5), stumble = i > 8 && i % 5 === 0 && card.kind !== "win";
+    if (after) { after = 0; lifted++; assert.equal(card.kind, "win", "card after a stumble was " + card.kind + " " + card.key); assert.ok(S.w[card.key].s >= 2); }
+    apply(S, R, card, stumble ? "miss" : "fast", 600, 300); if (stumble) after = 1;
+    if (R.i >= ROUND) Object.assign(R, newRound());
+  }
+  assert.ok(lifted >= 5, "lifts seen: " + lifted);
 });
