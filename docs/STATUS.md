@@ -3,7 +3,7 @@
 Read this first in a new session. It records what is built, what was decided and why, and what comes next.
 
 ## Live
-- Web game v18 at https://ndwolfe-commits.github.io/word-burn/ (branch `gh-pages`, built from `main` by `scripts/build.mjs`; publish steps are in the README).
+- Web game v19 at https://ndwolfe-commits.github.io/word-burn/ (branch `gh-pages`, built from `main` by `scripts/build.mjs`; publish steps are in the README).
 - 41 tests (`npm test`). A phone-like voice test lives outside the repo and should be rebuilt as a proper test.
 
 ## The words
@@ -36,6 +36,14 @@ Read this first in a new session. It records what is built, what was decided and
 - Seen on a real iPhone in v17, second round in a row: the phone put the sound meter (the Web Audio context) to sleep while dictation carried on. Every word was heard, none could be timed (`peak: 0`, `onset: null` in the record), and each counted as slow.
 - Now the meter is woken whenever it sleeps and checked before every word; if it will not wake, a "Keep going" tap is asked for, and failing that the round switches to tapping. A read the meter could not time is shown again, never graded.
 - Still open: a word that dictation hears but whose voice never crosses the voice-start line (meter awake, voice quiet) still counts as slow. That may be the "have to sit close" complaint; the quieter-voices trial is aimed at it.
+
+## Changed in v19, from four real rounds on an iPhone (all in `game.js`, none tried on a phone before publishing)
+- First word of every round after the first got a voice but no words, twice, and counted as a miss. In the records dictation went deaf whenever the microphone was opened within 40 ms of dictation starting, and never when it was 0.7 s or more later. The microphone is now opened 0.7 s after dictation is on. As a net: a voice with no words makes dictation start afresh before "Say it again".
+- The word before, settling late, could start the wrong-answer clock on the next word ("think" lost to a late "Harass"). Such a text is now ignored.
+- A long word could run over the edge of the card. It is now measured and shrunk to fit.
+- After a miss the game goes on to "Your turn" by itself once the phone has said the word; if the phone will not listen again without a tap, the "Now you say it" button comes back.
+- The spoken voice: uses a Premium or Enhanced British voice if the phone offers one, else the phone's default as before. The real fix would be recorded words; not started.
+- An adult's practice pile was swollen by the v17 all-slow round, which is why words seemed to repeat quickly.
 
 ## The iPhone app
 - `ios/` is a thin shell: a web view showing the same game, with listening and speaking done natively (`ios/App/Ears.swift`). The page talks to it through `window.webkit.messageHandlers.ears` and `window.__ears`.
