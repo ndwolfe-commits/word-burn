@@ -1,0 +1,19 @@
+# Checks that the iPhone app builds. No signing and no upload yet: that needs Apple keys in this repository's secrets.
+name: iOS
+on:
+  push:
+    branches: [ios]
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the game and copy it into the app
+        run: node scripts/build.mjs && cp -R dist ios/web
+      - name: Generate the Xcode project
+        run: brew install xcodegen && cd ios && xcodegen generate
+      - name: Build for the simulator
+        run: |
+          set -o pipefail
+          cd ios && xcodebuild -project WordBurn.xcodeproj -scheme WordBurn -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' -configuration Debug build CODE_SIGNING_ALLOWED=NO | tail -80

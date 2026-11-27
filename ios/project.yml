@@ -1,0 +1,31 @@
+# The iPhone app: a thin shell that shows the game and does the listening and speaking itself.
+# Xcode's project file is generated from this by xcodegen and is not kept in the repository.
+name: WordBurn
+options:
+  deploymentTarget:
+    iOS: "17.0"
+targets:
+  WordBurn:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+      - path: web            # the built game (dist/), copied here before generating
+        type: folder
+        buildPhase: resources
+    info:
+      path: Info.plist
+      properties:
+        CFBundleDisplayName: Word Burn
+        CFBundleShortVersionString: "0.1"
+        CFBundleVersion: "1"
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        NSMicrophoneUsageDescription: Word Burn listens for the word being read aloud and times how quickly it is said.
+        NSSpeechRecognitionUsageDescription: Word Burn checks that the word read aloud is the word on the screen. The sound stays on this phone.
+        ITSAppUsesNonExemptEncryption: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: net.nathanwolfe.wordburn
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
