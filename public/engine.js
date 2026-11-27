@@ -54,13 +54,22 @@ export function grade(S, key, out, rt, today = day()) {
 // kinds: "side" a word in practice coming back, "check" a burned word due for its check,
 //        "win" a burned word, given straight after a stumble or when nothing else is left,
 //        "easy" the next unseen word of four letters or more, "probe" an unseen word out ahead, "sprint" a very short unseen word, "win" a burned word for an easy success.
-export function newRound() { return { i: 0, last: {}, lastSide: -9, newCount: 0, checks: 0, prev: null, lift: false }; }
+export function newRound() { return { i: 0, last: {}, lastSide: -9, newCount: 0, checks: 0, prev: null, lift: false, recent: [] }; }
+// How the round is going, from the last eight cards: "up" when nearly everything is instant, "down" when under about two in three are.
+// The aim is a round where roughly 85% of reads are instant: harder words when cruising, easier ones on a bad day.
+export function mood(R) { const a = R.recent || []; if (a.length < 4) return "even"; const r = a.reduce((x, y) => x + y, 0) / a.length; return r >= 0.9 ? "up" : r < 0.67 ? "down" : "even"; }
 export function pick(S, R, today = day(), rand = Math.random) {
   const seenNow = k => k in R.last, age = k => (k in R.last ? R.last[k] : -99);
   const side = ALLKEYS.filter(k => S.w[k] && S.w[k].s === 1);
   const ready = side.filter(k => R.i - age(k) >= 3).sort((a, b) => age(a) - age(b));
-  if (R.lift) {                                                       // straight after a stumble: a word the reader already owns, for a sure success
-    const own = ALLKEYS.filter(k => S.w[k] && S.w[k].s >= 2 && k !== R.prev), unseenOwn = own.filter(k => !seenNow(k)), from = unseenOwn.length ? unseenOwn : own;
+  const m = mood(R);
+  // A word the reader already owns, for a sure success: straight after a miss, and every other card on a bad day.
+  // Owned words that are due their check come first, so the easy card also does useful work.
+  if (R.lift || (m === "down" && R.i % 2 === 0)) {
+    const own = ALLKEYS.filter(k => S.w[k] && S.w[k].s >= 2 && k !== R.prev), fresh1 = own.filter(k => !seenNow(k));
+    const dueOwn = fresh1.filter(k => S.w[k].d <= today).sort((a, b) => S.w[a].d - S.w[b].d);
+    if (dueOwn.length) return { key: dueOwn[0], kind: "check", lift: true };
+    const from = fresh1.length ? fresh1 : own;
     if (from.length) return { key: from[Math.floor(rand() * from.length)], kind: "win" };
   }
   const due = ALLKEYS.filter(k => S.w[k] && S.w[k].s >= 2 && S.w[k].d <= today && !seenNow(k)).sort((a, b) => S.w[a].d - S.w[b].d);
@@ -74,8 +83,8 @@ export function pick(S, R, today = day(), rand = Math.random) {
       const long = unseen.filter(k => k.length >= 4), tiny = unseen.filter(k => k.length < 4);
       if (tiny.length && (R.i >= ROUND - SPRINT || !long.length)) other = { key: tiny[0], kind: "sprint" };
       else if (long.length) {
-        // While still looking for the reader's edge: easy, probe, easy, probe. Once found: easy, easy, probe.
-        const probeTurn = (S.found ? R.newCount % 3 === 2 : R.newCount % 2 === 1) && side.length < CAP;
+        // While still looking for the reader's edge, or when the round is going very well: easy, probe, easy, probe. Otherwise: easy, easy, probe. On a bad day: no probes.
+        const probeTurn = m !== "down" && (S.found && m !== "up" ? R.newCount % 3 === 2 : R.newCount % 2 === 1) && side.length < CAP;
         // A reader who has not stumbled by the top of the list is probed from the top down.
         const ahead = long.find(k => RANK.get(k) >= S.level) || (S.found ? null : long[long.length - 1]);
         other = probeTurn && ahead && ahead !== long[0] ? { key: ahead, kind: "probe" } : { key: long[0], kind: "easy" };
@@ -83,7 +92,7 @@ export function pick(S, R, today = day(), rand = Math.random) {
     }
   }
   if (!other) { const wins = ALLKEYS.filter(k => S.w[k] && S.w[k].s >= 2 && !seenNow(k)); if (wins.length) other = { key: wins[Math.floor(rand() * wins.length)], kind: "win" }; }
-  if (ready.length && (!other || R.i - R.lastSide >= 3)) return { key: ready[0], kind: "side" };   // at most one card in three
+  if (ready.length && (!other || R.i - R.lastSide >= (m === "down" ? 4 : 3))) return { key: ready[0], kind: "side" };   // at most one card in three
   if (other) return other;
   const rest = side.filter(k => k !== R.prev).sort((a, b) => age(a) - age(b));
   if (rest.length || side.length) return { key: rest[0] || side[0], kind: "side" };
@@ -100,8 +109,9 @@ export function apply(S, R, card, out, rt, today = day()) {
   else if (card.kind === "easy" && rank >= S.level) S.level = rank + 1;
   if (card.kind === "probe" || card.kind === "easy") R.newCount++;
   if (card.kind === "side") R.lastSide = R.i;
-  if (card.kind === "check") R.checks++;
-  R.lift = out === "miss" && card.kind !== "win";                     // one easy card after a miss, never two in a row
+  if (card.kind === "check" && !card.lift) R.checks++;
+  (R.recent || (R.recent = [])).push(out === "fast" ? 1 : 0); if (R.recent.length > 8) R.recent.shift();
+  R.lift = out === "miss" && card.kind !== "win" && !card.lift;                     // one easy card after a miss, never two in a row
   R.last[card.key] = R.i; R.prev = card.key; R.i++;
   if (g.burnedNow) S.burned++;
   return g;

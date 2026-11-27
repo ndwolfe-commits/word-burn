@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { ALLKEYS, RANK, fresh, grade, pick, apply, newRound, matches, instantMs, counts, IV, ROUND, mergeState, cleanState } from "../public/engine.js";
+import { ALLKEYS, RANK, fresh, grade, pick, apply, newRound, matches, instantMs, counts, IV, ROUND, mergeState, cleanState, mood } from "../public/engine.js";
 
 test("the word sets load, with duplicates removed", () => { assert.equal(ALLKEYS.length, 707); assert.equal(RANK.get("the"), 0); });
 
@@ -118,4 +118,23 @@ test("a miss is followed by a word the reader already owns", () => {
     if (R.i >= ROUND) Object.assign(R, newRound());
   }
   assert.ok(lifted >= 5, "lifts seen: " + lifted);
+});
+test("on a bad day the round eases off: no harder words, and owned words every other card", () => {
+  const S = fresh(), R = newRound();
+  for (let i = 0; i < 12; i++) apply(S, R, pick(S, R, 300, () => 0.5), "fast", 600, 300);      // some owned words first
+  const kinds = [];
+  for (let i = 0; i < 16; i++) { const card = pick(S, R, 300, () => 0.5); kinds.push(card.kind); apply(S, R, card, card.kind === "easy" || card.kind === "probe" || card.kind === "side" ? "miss" : "fast", 600, 300); if (R.i >= ROUND) { const keep = R.recent; Object.assign(R, newRound(), { recent: keep }); } }
+  assert.equal(mood(R), "down", kinds.join(" "));
+  const late = kinds.slice(8); assert.ok(!late.includes("probe"), late.join(" ")); assert.ok(late.filter(k => k === "win" || k === "check").length >= 4, late.join(" "));
+});
+test("when the reader is flying, a harder word comes every other new word even after an earlier stumble", () => {
+  const S = fresh(); S.found = 1; const R = newRound(); let probes = 0, fresh2 = 0;
+  for (let i = 0; i < 15; i++) { const card = pick(S, R, 300, () => 0.5); if (card.kind === "probe") probes++; if (card.kind === "probe" || card.kind === "easy") fresh2++; apply(S, R, card, "fast", 600, 300); }
+  assert.equal(mood(R), "up"); assert.ok(probes >= fresh2 / 2 - 2, probes + " probes in " + fresh2 + " new words");
+});
+test("an owned word that is due its check is used as the easy card after a miss", () => {
+  const S = fresh(), R = newRound();
+  for (let i = 0; i < 6; i++) apply(S, R, pick(S, R, 300, () => 0.5), "fast", 600, 300);
+  const R2 = newRound(); const first = pick(S, R2, 310, () => 0.5); apply(S, R2, first, "miss", 0, 310);
+  const next = pick(S, R2, 310, () => 0.5); assert.equal(next.kind, "check"); assert.ok(next.lift); assert.ok(S.w[next.key].d <= 310);
 });
