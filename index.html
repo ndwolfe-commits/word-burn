@@ -49,6 +49,7 @@ button:focus-visible{outline:3px solid var(--fire);outline-offset:3px}
 input[type=text]{flex:1;min-width:0;font:inherit;font-size:18px;padding:12px 14px;border-radius:14px;border:2px solid var(--line);background:rgba(255,255,255,.06);color:var(--ink);user-select:text;-webkit-user-select:text}
 .fam{display:flex;flex-direction:column;gap:10px}
 .code{font-size:30px;font-weight:900;letter-spacing:.12em;color:var(--fire);font-variant-numeric:tabular-nums}
+.ver{position:absolute;bottom:calc(8px + env(safe-area-inset-bottom));left:0;right:0;text-align:center;font-size:12px;color:var(--muted);opacity:.7}
 .corner{position:absolute;top:calc(14px + env(safe-area-inset-top));right:16px}
 
 /* play */
@@ -119,7 +120,13 @@ a{color:var(--cool)}
 <div id="app"></div>
 <script type="module">
 const boot = v => import("./game." + v + ".js");
-fetch("version.json", { cache: "no-store" }).then(r => r.json()).then(j => boot(j.v), () => boot("d684892a"));
+let loaded = "421f1648";
+const current = () => fetch("version.json?t=" + Date.now(), { cache: "no-store" }).then(r => r.json()).then(j => j.v);
+current().then(v => { loaded = v; return boot(v); }, () => boot(loaded));
+// A phone often brings the page back from memory instead of loading it again. When it comes back, check for a
+// newer version and reload, unless a round is being played.
+const recheck = () => { if (document.hidden || document.getElementById("card")) return; current().then(v => { if (v !== loaded) location.reload(); }, () => {}); };
+document.addEventListener("visibilitychange", recheck); addEventListener("pageshow", e => { if (e.persisted) recheck(); });
 </script>
 </body>
 </html>

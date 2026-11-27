@@ -1,8 +1,9 @@
 // Word Burn: the screen, the voice and the fireworks. The rules of the game live in engine.js.
-import { LISTS, ALLKEYS, ROUND, fresh, matches, instantMs, pick, apply, newRound, counts, band, mergeState, cleanState, dropStale, tokens } from "./engine.d684892a.js";
+import { LISTS, ALLKEYS, ROUND, fresh, matches, instantMs, pick, apply, newRound, counts, band, mergeState, cleanState, dropStale, tokens } from "./engine.421f1648.js";
 
-const BUILD = "d684892a";
-const VERSION = "game v4 (" + BUILD + ")";
+const BUILD = "421f1648";
+const SHORT = "v5";
+const VERSION = "game " + SHORT + " (" + BUILD + ")";
 const OLDKEY = "wb.game.v1", SETKEY = "wb.settings.v1", DEVKEY = "wb.device.v2", stateKey = id => "wb.state." + id;
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 const store = { get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} } };
@@ -319,7 +320,8 @@ function home() {
     h("button", { class: "name", onclick: who }, p.name, h("span", null, "  change")),
     h("div", { class: "tally" }, h("b", { id: "tally" }, total), total === 1 ? "word burned" : "words burned"),
     h("button", { class: "play", id: "play", onclick: startRound }, "Play"),
-    S.streak.n > 1 && (S.streak.d === new Date().toDateString() || S.streak.d === new Date(Date.now() - 864e5).toDateString()) ? h("div", { class: "muted" }, S.streak.n + " days in a row") : null);
+    S.streak.n > 1 && (S.streak.d === new Date().toDateString() || S.streak.d === new Date(Date.now() - 864e5).toDateString()) ? h("div", { class: "muted" }, S.streak.n + " days in a row") : null,
+    h("div", { class: "ver" }, SHORT));
   if (D.family) sync().then(ok => { if (ok && app.className === "home" && !document.querySelector(".sheet")) { const c2 = counts(S), t = document.getElementById("tally"); if (t) t.textContent = c2.burned + c2.locked; } });
 }
 function who() {
@@ -331,7 +333,8 @@ function who() {
     h("div", { class: "logo", style: "font-size:40px" }, "Who’s", h("b", null, "playing?")),
     h("div", { class: "names" }, D.players.map(p => h("button", { class: "pick", onclick: () => { choose(p.id); home(); } }, p.name))),
     h("div", { class: "newp" }, input, h("button", { class: "ghost", style: "width:auto", onclick: add }, D.players.length ? "Add" : "Start")),
-    D.family ? null : h("p", { class: "muted small", style: "max-width:300px" }, "Already playing on another phone? Open Settings there for the family code, then join it from Settings here."));
+    D.family ? null : h("p", { class: "muted small", style: "max-width:300px" }, "Already playing on another phone? Open Settings there for the family code, then join it from Settings here."),
+    h("div", { class: "ver" }, SHORT));
   pullFamily().then(() => { if (app.className === "home" && document.getElementById("newname") && !document.getElementById("newname").value && !document.querySelector(".sheet")) { const names = document.querySelector(".names"); if (names && names.children.length !== D.players.length) who(); } });
 }
 function playScreen() {
