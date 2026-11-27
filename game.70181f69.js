@@ -1,9 +1,9 @@
 // Word Burn: the screen, the voice and the fireworks. The rules of the game live in engine.js.
-import { LISTS, SCHOOL, ALLKEYS, ROUND, fresh, matches, hears, learn, instantMs, pick, apply, newRound, counts, band, mergeState, cleanState } from "./engine.96830758.js";
-import { SUMMIT, W as MW, trail, scene, walkPlan, gemSteps, gemsMarkup, climberAt } from "./mountain.96830758.js";
+import { LISTS, SCHOOL, ALLKEYS, ROUND, fresh, matches, hears, learn, instantMs, pick, apply, newRound, counts, band, mergeState, cleanState } from "./engine.70181f69.js";
+import { SUMMIT, W as MW, nextStop, trail, scene, walkPlan, gemSteps, gemsMarkup, climberAt } from "./mountain.70181f69.js";
 
-const BUILD = "96830758";
-const SHORT = "v15";
+const BUILD = "70181f69";
+const SHORT = "v16";
 const VERSION = "game " + SHORT + " (" + BUILD + ")";
 const OLDKEY = "wb.game.v1", SETKEY = "wb.settings.v1", DEVKEY = "wb.device.v2", stateKey = id => "wb.state." + id;
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -389,7 +389,13 @@ function mountain(at, gemCount) {
   const scale = () => (svg.clientWidth || MW) / MW;
   const fit = () => { svg.style.height = Math.round(scale() * TRAIL.height) + "px"; };
   const look = y => { box.scrollTop = y * scale() - box.clientHeight * .6; };
-  const mark = n => { map.innerHTML = '<svg viewBox="0 0 44 44"><polygon points="4,40 22,6 40,40" fill="#2b3f78" stroke="#a3b3d6" stroke-width="1.5" stroke-linejoin="round"/><polygon points="22,6 17,15.5 27,15.5" fill="#eef3ff"/><circle cx="22" cy="' + (38 - 28 * n / SUMMIT).toFixed(1) + '" r="4" fill="#ffb21e" stroke="#0d1830" stroke-width="1.5"/></svg>'; };
+  // The small map: the whole mountain filled up to where he is, and how far it is to the next camp. One round is too small
+  // to see on a picture this size, so the count underneath is what moves every step.
+  const mark = n => {
+    const y = (38 - 30 * n / SUMMIT).toFixed(1), stop = nextStop(n);
+    map.innerHTML = '<svg viewBox="0 0 44 44"><defs><clipPath id="mm"><polygon points="4,40 22,6 40,40"/></clipPath></defs><polygon points="4,40 22,6 40,40" fill="#2b3f78"/><rect clip-path="url(#mm)" x="0" y="' + y + '" width="44" height="44" fill="#ffb21e" opacity=".55"/><polygon points="22,6 17,15.5 27,15.5" fill="#eef3ff"/><polygon points="4,40 22,6 40,40" fill="none" stroke="#a3b3d6" stroke-width="1.5" stroke-linejoin="round"/><circle cx="22" cy="' + y + '" r="4" fill="#ffb21e" stroke="#0d1830" stroke-width="1.5"/></svg>';
+    map.append(h("div", null, stop ? h("b", null, stop.left) : "At the top!", stop ? " to " + stop.name : null));
+  };
   const say1 = text => { banner.textContent = text; banner.classList.remove("go"); void banner.offsetWidth; banner.classList.add("go"); };
   const here = n => { const r = svg.getBoundingClientRect(), k = scale(), p = TRAIL.pts[n]; return [r.left + p.x * k, r.top + p.y * k]; };
   const onResize = () => { if (!box.isConnected) return removeEventListener("resize", onResize); fit(); };
@@ -415,7 +421,7 @@ function mountain(at, gemCount) {
       for (let i = plan.start; i < plan.end; i++) {
         if (!box.isConnected) return false;
         if (still) { who.setAttribute("transform", climberAt(TRAIL.pts[i + 1])); look(TRAIL.pts[i + 1].y); } else await hop(TRAIL.pts[i], TRAIL.pts[i + 1], ms);
-        stones[i + 1].classList.add("on"); tone(520 + ((i - plan.start) % 8) * 40, 0, .06, .04);
+        stones[i + 1].classList.add("on"); mark(i + 1); tone(520 + ((i - plan.start) % 8) * 40, 0, .06, .04);
         const gem = gemBox.querySelector('[data-s="' + (i + 1) + '"]');
         if (gem) { gem.classList.add("pop"); tone(1320, 0, .12, .07); tone(1760, .07, .16, .06); }
         const camp = plan.camps.find(c => c.n === i + 1), topped = plan.summit && i + 1 === plan.end;

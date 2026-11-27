@@ -70,7 +70,8 @@ input[type=text]{flex:1;min-width:0;font:inherit;font-size:18px;padding:12px 14p
 .gem.pop{animation:pop .45s ease-out forwards}
 @keyframes bob{50%{transform:translateY(-4px)}}
 @keyframes pop{to{transform:translateY(-26px) scale(2);opacity:0}}
-.mtn-map{position:absolute;top:8px;right:8px;width:44px;height:44px;background:rgba(13,24,48,.7);border-radius:12px;pointer-events:none}
+.mtn-map{position:absolute;top:8px;right:8px;display:flex;align-items:center;gap:6px;padding:4px 10px 4px 4px;background:rgba(13,24,48,.82);border-radius:14px;pointer-events:none;font-size:13px;font-weight:700;color:var(--ink)}
+.mtn-map svg{width:44px;height:44px;flex:none} .mtn-map b{color:var(--fire);font-size:17px;font-weight:900;font-variant-numeric:tabular-nums}
 .mtn-banner{position:absolute;left:0;right:0;top:22%;text-align:center;font-weight:900;font-size:40px;color:var(--fire);text-shadow:0 3px 0 #2a1500,0 0 24px rgba(255,140,30,.7);opacity:0;pointer-events:none}
 .mtn-banner.go{animation:cheer 1.6s ease-out forwards}
 @keyframes cheer{0%{opacity:0;transform:scale(.4)}20%{opacity:1;transform:scale(1.15)}35%{transform:scale(1)}80%{opacity:1}100%{opacity:0;transform:translateY(-20px)}}
@@ -155,7 +156,7 @@ a{color:var(--cool)}
 <div id="app"></div>
 <script type="module">
 const boot = v => import("./game." + v + ".js");
-let loaded = "96830758";
+let loaded = "70181f69";
 const current = () => fetch("version.json?t=" + Date.now(), { cache: "no-store" }).then(r => r.json()).then(j => j.v);
 current().then(v => { loaded = v; return boot(v); }, () => boot(loaded));
 // A phone often brings the page back from memory instead of loading it again. When it comes back, check for a
