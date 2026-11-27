@@ -3,7 +3,7 @@
 Read this first in a new session. It records what is built, what was decided and why, and what comes next.
 
 ## Live
-- Web game v17 at https://ndwolfe-commits.github.io/word-burn/ (branch `gh-pages`, built from `main` by `scripts/build.mjs`; publish steps are in the README).
+- Web game v18 at https://ndwolfe-commits.github.io/word-burn/ (branch `gh-pages`, built from `main` by `scripts/build.mjs`; publish steps are in the README).
 - 41 tests (`npm test`). A phone-like voice test lives outside the repo and should be rebuilt as a proper test.
 
 ## The words
@@ -29,8 +29,13 @@ Read this first in a new session. It records what is built, what was decided and
 
 ## First round on a real iPhone (v15, Safari, an adult reading)
 - The mountain and the walk worked. All 20 words were heard right first time, but the reader had to be close to the phone and speak clearly; the loudest levels in the record were low (0.010 to 0.025).
-- Not yet known whether the weak link is the phone's dictation or the game's own voice-start line. In v17 a trial switch was added in Settings, "Microphone (a trial)": Hears quieter voices asks the phone to turn a quiet voice up (the microphone's automatic gain). Off by default, web version only, never tried on a real phone before publishing. The game record now says which setting was used and whether the phone honoured it. Keep it or remove it once a real record shows whether it helps. The iPhone app listens differently (it tells the recogniser which word to expect), so judge it there first.
+- Not yet known whether the weak link is the phone's dictation or the game's own voice-start line. A v17 trial switch asking the phone to turn a quiet voice up was tried on the phone and removed in v18: the sound levels were the same with it on (0.008 to 0.030), so the iPhone ignores the request. What the records do show is the phone's dictation failing on very short words said alone: "or" gave no text twice, "to" came back as "Dog". Volume is not the problem; the recogniser is. The iPhone app listens differently (it tells the recogniser which word to expect), so judge it there first.
 - Wispr Flow was looked at as a replacement: its API is by approval only and runs on their servers, which breaks "the voice never leaves the phone". Not pursued.
+
+## Fixed in v18: a whole round marked "too slow"
+- Seen on a real iPhone in v17, second round in a row: the phone put the sound meter (the Web Audio context) to sleep while dictation carried on. Every word was heard, none could be timed (`peak: 0`, `onset: null` in the record), and each counted as slow.
+- Now the meter is woken whenever it sleeps and checked before every word; if it will not wake, a "Keep going" tap is asked for, and failing that the round switches to tapping. A read the meter could not time is shown again, never graded.
+- Still open: a word that dictation hears but whose voice never crosses the voice-start line (meter awake, voice quiet) still counts as slow. That may be the "have to sit close" complaint; the quieter-voices trial is aimed at it.
 
 ## The iPhone app
 - `ios/` is a thin shell: a web view showing the same game, with listening and speaking done natively (`ios/App/Ears.swift`). The page talks to it through `window.webkit.messageHandlers.ears` and `window.__ears`.

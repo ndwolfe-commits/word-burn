@@ -3,7 +3,7 @@ import { LISTS, SCHOOL, ALLKEYS, ROUND, fresh, matches, hears, learn, instantMs,
 import { SUMMIT, W as MW, nextStop, trail, scene, walkPlan, gemSteps, gemsMarkup, climberAt } from "./mountain.js";
 
 const BUILD = "dev";
-const SHORT = "v17";
+const SHORT = "v18";
 const VERSION = "game " + SHORT + " (" + BUILD + ")";
 const OLDKEY = "wb.game.v1", SETKEY = "wb.settings.v1", DEVKEY = "wb.device.v2", stateKey = id => "wb.state." + id;
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -11,7 +11,7 @@ const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 const NATIVE = !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.ears);
 const tell = m => { try { window.webkit.messageHandlers.ears.postMessage(m); } catch (e) {} };
 const store = { get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} } };
-let P = Object.assign({ mode: "voice", sound: true, mic: "normal" }, store.get(SETKEY) || {});
+let P = Object.assign({ mode: "voice", sound: true }, store.get(SETKEY) || {});
 // This phone's players, who is playing now, and the family code if it has joined one.
 let D = Object.assign({ players: [], active: null, family: null }, store.get(DEVKEY) || {});
 let S = fresh();
@@ -169,16 +169,29 @@ async function recoverEars() {
   return true;
 }
 async function wireMic() {
-  // A trial, switched on in Settings: let the phone turn a quiet or distant voice up by itself. Off, the microphone is left raw.
-  ears.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: true, autoGainControl: P.mic === "boost" } });
+  ears.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: true, autoGainControl: false } });
   const tr = ears.stream.getAudioTracks()[0];
-  try { const g = tr.getSettings(); dbg("microphone", { asked: P.mic, turnsItselfUp: g.autoGainControl, noiseSuppression: g.noiseSuppression }); } catch (e) {}
   if (tr) { tr.onmute = () => dbg("microphone muted"); tr.onunmute = () => dbg("microphone back"); tr.onended = () => dbg("microphone ended"); }
   if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
   if (actx.state !== "running") await actx.resume();
-  actx.onstatechange = () => dbg("audio " + actx.state);
+  actx.onstatechange = () => { dbg("audio " + actx.state); if (ears.want && actx.state !== "running") actx.resume().catch(() => {}); };
   ears.analyser = actx.createAnalyser(); ears.analyser.fftSize = 512; ears.analyser.smoothingTimeConstant = 0;
   actx.createMediaStreamSource(ears.stream).connect(ears.analyser); ears.buf = new Float32Array(512);
+}
+// The game times the voice with a sound meter that is separate from the phone's dictation. A phone can put the meter to sleep
+// (often at the start of a second round) while dictation carries on. Then every word is heard but none can be timed, and
+// every read would wrongly count as too slow. So before each word: check the meter is awake, wake it, or ask for a tap.
+const meterAwake = () => { if (NATIVE) return true; const tr = ears.stream && ears.stream.getAudioTracks()[0]; return !!(actx && actx.state === "running" && tr && tr.readyState === "live" && !tr.muted); };
+async function wakeMeter() {
+  if (meterAwake()) return true;
+  dbg("sound meter asleep", { audio: actx && actx.state });
+  try { await Promise.race([actx.resume(), wait(500)]); } catch (e) {}
+  if (!meterAwake()) await wait(400);                                // a microphone the phone muted for a moment usually comes back by itself
+  if (meterAwake()) { dbg("sound meter woken"); return true; }
+  dbg("asked for a tap to wake the sound meter");
+  await new Promise(res => sheet(h("div", null, h("h1", null, "Listening stopped"), h("button", { class: "play", onclick: () => { closeSheet(); recoverEars().then(res, res); } }, "Keep going"))));
+  dbg(meterAwake() ? "sound meter woken by a tap" : "sound meter would not wake");
+  return meterAwake();
 }
 async function openEars() {
   ears.error = ""; ears.live = false; ears.ignoreUntil = 0;
@@ -259,7 +272,7 @@ async function startRound() {
   if (voice) opening = openEars();                                    // straight from the tap
   say(" ", true);                                                     // phones only let a page speak later if it first speaks from a tap
   { const last = store.get("wb.debug"), old = store.get("wb.debug.old") || []; if (last && last.length) { old.push(last); store.set("wb.debug.old", old.slice(-4)); } }   // keep the four games before this one too
-  DBG.length = 0; dbg0 = performance.now(); dbg("game", { version: VERSION, voice, mic: P.mic, homeScreen: standalone(), instant: instantMs(S), level: S.level, device: navigator.userAgent });
+  DBG.length = 0; dbg0 = performance.now(); dbg("game", { version: VERSION, voice, homeScreen: standalone(), instant: instantMs(S), level: S.level, device: navigator.userAgent });
   R = newRound(); T = { voice, outs: [], score: 0, combo: 0, maxCombo: 0, burned: [], later: [], fastest: null, stop: false, retried: {}, from: stepsNow(), sideBefore: sideWords() };
   playScreen();
   if (voice) {
@@ -278,6 +291,8 @@ async function playCard(card) {
   const wordEl = document.getElementById("word"), cardEl = document.getElementById("card"); if (!wordEl) return;
   cardEl.className = "card"; wordEl.className = "dot"; wordEl.textContent = ""; wordEl.style.fontSize = ""; setSay("", ""); drawFoot("wait");
   let floor = 0.0003;
+  if (T.voice && !(await wakeMeter())) { if (!R || T.stop) return; await tapInstead(); }
+  if (!R || T.stop) return;
   if (T.voice) floor = await quietRoom(); else await wait(450);
   if (!R || T.stop) return;
   wordEl.className = ""; wordEl.textContent = show(card.key);
@@ -289,6 +304,12 @@ async function playCard(card) {
   let out, rt = 0, heard = "", soft = false;
   if (T.voice) {
     const r = await listen(card.key, t0, floor); if (!R || T.stop) return;
+    if (!NATIVE && !r.unheard && r.onset == null && ears.peak === 0) {    // heard by dictation, but the meter gave no sound at all: it was asleep, so the read was not timed
+      dbg("not timed: the sound meter was asleep"); T.asleep = (T.asleep | 0) + 1;
+      if (T.asleep > 2) await tapInstead(); else { setSay("", "One more time", "The microphone dozed off."); await wait(900); }
+      if (!R || T.stop) return;
+      return playCard(card);
+    }
     if (r.unheard) {
       if (!T.retried[card.key]) { T.retried[card.key] = 1; setSay("", "Didn’t catch that", "Say it again."); await wait(900); return playCard(card); }
       out = "miss";
@@ -299,6 +320,8 @@ async function playCard(card) {
   }
   await settle(card, out, rt, heard, soft);
 }
+// Give up on listening for the rest of this round, the same way as when the microphone will not open.
+async function tapInstead() { dbg("switched to tapping for this round"); closeEars(); T.voice = false; setSay("", "No microphone this time", "A grown-up can tap instead."); drawFoot(); await wait(1500); }
 async function settle(card, out, rt, heard, soft) {
   const wordEl = document.getElementById("word"), cardEl = document.getElementById("card");
   T.tap = null; drawFoot("wait");                                    // answer buttons go as soon as one is used
@@ -528,8 +551,6 @@ function grownUps() {
     S.log.length ? [h("h2", null, "Recent misses and what the phone heard"), h("p", { class: "small" }, S.log.slice(-10).reverse().map(r => show(r.k) + " → “" + r.heard + "”").join(", "))] : null,
     h("h2", null, "How answers are checked"),
     SR || NATIVE ? h("div", { class: "seg" }, opt("mode", "voice", "The phone listens"), opt("mode", "tap", "A grown-up taps")) : h("p", { class: "small muted" }, "This browser has no dictation, so a grown-up taps Got it or Not yet."),
-    (SR && !NATIVE) ? [h("h2", null, "Microphone (a trial)"), h("div", { class: "seg" }, opt("mic", "normal", "Normal"), opt("mic", "boost", "Hears quieter voices")),
-      h("p", { class: "small muted" }, "If the reader has to sit close and speak up, try Hears quieter voices. It asks the phone to turn a quiet voice up. Switch back if it starts mishearing or cutting in early.")] : null,
     h("h2", null, "Sounds"), h("div", { class: "seg" }, opt("sound", true, "On"), opt("sound", false, "Off")),
     h("h2", null, "How it works"),
     h("p", { class: "small" }, "A word read right and instantly burns. Instant is set from the reader’s own speed, currently within " + secs(instantMs(S)) + (S.rt.length < 6 ? " (a starting value until it has timed a few reads)" : "") + "."),
