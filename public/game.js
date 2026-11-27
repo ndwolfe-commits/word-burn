@@ -1,8 +1,8 @@
 // Word Burn: the screen, the voice and the fireworks. The rules of the game live in engine.js.
-import { LISTS, ALLKEYS, ROUND, fresh, matches, instantMs, pick, apply, newRound, counts, band, mergeState, cleanState } from "./engine.js";
+import { LISTS, SCHOOL, ALLKEYS, ROUND, fresh, matches, instantMs, pick, apply, newRound, counts, band, mergeState, cleanState } from "./engine.js";
 
 const BUILD = "dev";
-const SHORT = "v8";
+const SHORT = "v9";
 const VERSION = "game " + SHORT + " (" + BUILD + ")";
 const OLDKEY = "wb.game.v1", SETKEY = "wb.settings.v1", DEVKEY = "wb.device.v2", stateKey = id => "wb.state." + id;
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -411,6 +411,7 @@ function grownUps() {
     h("div", { class: "row spread" }, h("h1", null, "Settings"), h("button", { class: "icon", "aria-label": "Close", onclick: () => { closeSheet(); home(); } }, "✕")),
     h("h2", null, "Family"), familyBox(),
     me() ? h("h2", null, me().name + "’s progress") : null,
+    !me() ? null : (() => { const c = counts(S, SCHOOL); return h("p", { class: "small muted" }, "School sheet: " + (c.burned + c.locked) + " of " + SCHOOL.length + " words burned"); })(),
     !me() ? null : LISTS.map(l => { const c = counts(S, l.words), n = l.words.length; return h("div", null, h("div", { class: "row spread small" }, h("span", null, l.name), h("span", { class: "muted" }, (c.burned + c.locked) + " of " + n + (c.side ? ", " + c.side + " coming back" : ""))), h("div", { class: "bar" }, ["locked", "burned", "side"].map(b => c[b] ? h("i", { class: b, style: "width:" + (100 * c[b] / n) + "%" }) : null))); }),
     side.length ? [h("h2", null, "Coming back (" + side.length + ")"), h("p", { class: "small" }, side.map(show).join(", "))] : null,
     S.log.length ? [h("h2", null, "Recent misses and what the phone heard"), h("p", { class: "small" }, S.log.slice(-10).reverse().map(r => show(r.k) + " → “" + r.heard + "”").join(", "))] : null,

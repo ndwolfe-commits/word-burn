@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { ALLKEYS, RANK, fresh, grade, pick, apply, newRound, matches, instantMs, counts, IV, ROUND, mergeState, cleanState } from "../public/engine.js";
 
-test("the word sets load, with duplicates removed", () => { assert.equal(ALLKEYS.length, 507); assert.equal(RANK.get("the"), 0); });
+test("the word sets load, with duplicates removed", () => { assert.equal(ALLKEYS.length, 707); assert.equal(RANK.get("the"), 0); });
 
 test("matching accepts same-sounding and US spellings, and rejects near misses", () => {
   assert.ok(matches("There", "their")); assert.ok(matches("End", "and")); assert.ok(matches("And a", "a")); assert.ok(!matches("The what", "to")); assert.ok(matches("Favorite.", "favourite")); assert.ok(matches("I'm", "I'm"));
@@ -58,8 +58,8 @@ test("a reader with a frontier at 180 mostly succeeds while the easy words are s
   assert.ok(S.level >= 150 && S.level <= 260, "frontier estimate " + S.level);
 });
 test("a strong reader gets through the whole list in a bounded number of rounds", () => {
-  const { c, cards } = play(507, 40);
-  assert.equal(c.un, 0, "unseen left " + c.un); assert.ok(cards <= 40 * ROUND);
+  const { c, cards } = play(707, 55);
+  assert.equal(c.un, 0, "unseen left " + c.un); assert.ok(cards <= 55 * ROUND);
 });
 test("a weak reader is not flooded: the side pile stays capped", () => {
   const { c, rate } = play(15, 10);
@@ -94,8 +94,9 @@ test("a reset on one phone is not undone by an older copy", () => {
 });
 test("progress from outside is cleaned before use", () => {
   assert.equal(cleanState(null), null); assert.equal(cleanState({ w: 3 }), null);
-  const c = cleanState({ w: { the: { s: 99, n: 2 }, "not-a-word": { s: 2 }, said: "x" }, level: 99999, rt: [700, "x"], rounds: [{ t: 1, n: 20 }, 5], extra: "<script>" });
+  const c = cleanState({ w: { the: { s: 99, n: 2 }, "not-a-word": { s: 2 }, said: "x" }, lv: 2, level: 99999, rt: [700, "x"], rounds: [{ t: 1, n: 20 }, 5], extra: "<script>" });
   assert.deepEqual(Object.keys(c.w), ["the"]); assert.equal(c.w.the.s, 7); assert.equal(c.level, ALLKEYS.length); assert.deepEqual(c.rt, [700]); assert.equal(c.rounds.length, 1); assert.equal(c.extra, undefined);
+  assert.equal(cleanState({ w: {}, level: 400, found: 1 }).level, 30, "a level counted along the old word order starts again");
 });
 test("a round opens with words of four letters or more and ends with a run of very short ones", () => {
   const S = fresh(), R = newRound(), seen = [];
