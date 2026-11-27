@@ -1,9 +1,9 @@
 // Word Burn: the screen, the voice and the fireworks. The rules of the game live in engine.js.
-import { LISTS, SCHOOL, ALLKEYS, ROUND, fresh, matches, hears, learn, instantMs, pick, apply, newRound, counts, band, mergeState, cleanState } from "./engine.cc02782f.js";
-import { SUMMIT, W as MW, nextStop, trail, scene, walkPlan, gemSteps, gemsMarkup, climberAt } from "./mountain.cc02782f.js";
+import { LISTS, SCHOOL, ALLKEYS, ROUND, fresh, matches, hears, learn, instantMs, pick, apply, newRound, counts, band, mergeState, cleanState } from "./engine.6512dcd7.js";
+import { SUMMIT, W as MW, nextStop, trail, scene, walkPlan, gemSteps, gemsMarkup, climberAt } from "./mountain.6512dcd7.js";
 
-const BUILD = "cc02782f";
-const SHORT = "v18";
+const BUILD = "6512dcd7";
+const SHORT = "v19";
 const VERSION = "game " + SHORT + " (" + BUILD + ")";
 const OLDKEY = "wb.game.v1", SETKEY = "wb.settings.v1", DEVKEY = "wb.device.v2", stateKey = id => "wb.state." + id;
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -104,6 +104,10 @@ const sfx = { fast() { tone(700, 0, .08); tone(1050, .06, .1); tone(1400, .12, .
 
 /* ---------- saying a word aloud ---------- */
 const canSay = "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
+// The phone's standard voice is rough. If a better British one has been downloaded to the phone, use that.
+let voice = null;
+const pickVoice = () => { try { const v = speechSynthesis.getVoices().filter(x => /^en[-_]GB/i.test(x.lang)); voice = v.find(x => /premium/i.test(x.name)) || v.find(x => /enhanced/i.test(x.name)) || null; } catch (e) {} };
+if (canSay) { pickVoice(); try { speechSynthesis.addEventListener("voiceschanged", pickVoice); } catch (e) {} }
 function say(text, quiet) {
   if (NATIVE) return quiet ? Promise.resolve(true) : new Promise(res => {
     let done = false; const end = ok => { if (!done) { done = true; ears.said = null; dbg("spoke", ok ? "ok" : "no end signal"); res(ok); } };
@@ -112,7 +116,7 @@ function say(text, quiet) {
   return new Promise(res => {
     if (!canSay) return res(false);
     try {
-      const u = new SpeechSynthesisUtterance(text); u.lang = "en-GB"; u.rate = .85; if (quiet) u.volume = 0;
+      const u = new SpeechSynthesisUtterance(text); u.lang = "en-GB"; u.rate = .85; if (voice) u.voice = voice; if (quiet) u.volume = 0;
       let done = false; const end = ok => { if (!done) { done = true; if (!quiet) dbg("spoke", ok ? "ok" : "no end signal"); res(ok); } };
       u.onend = () => end(true); u.onerror = () => end(false);
       speechSynthesis.cancel(); speechSynthesis.speak(u); setTimeout(() => end(false), 3000);
@@ -155,6 +159,7 @@ async function recoverEars() {
   dbg("recovering after speaking", { audio: actx && actx.state, micMuted: tr0 ? tr0.muted : null, mic: tr0 ? tr0.readyState : null, dictationOn: ears.live });
   ears.ignoreUntil = performance.now() + 300; ears.down = false; ears.error = "";
   try { ears.rec.onend = null; if (ears.rec.abort) ears.rec.abort(); else ears.rec.stop(); } catch (e) {}
+  ears.live = false;
   try { startRec(); } catch (e) { dbg("dictation would not restart", String(e.name || e)); }          // straight from the tap
   try { if (actx.state !== "running") await actx.resume(); } catch (e) { dbg("audio would not resume", String(e.name || e)); }
   let tr = ears.stream && ears.stream.getAudioTracks()[0];
@@ -193,6 +198,11 @@ async function wakeMeter() {
   dbg(meterAwake() ? "sound meter woken by a tap" : "sound meter would not wake");
   return meterAwake();
 }
+function restartDictation() {
+  try { ears.rec.onend = null; if (ears.rec.abort) ears.rec.abort(); else ears.rec.stop(); } catch (e) {}
+  ears.live = false;
+  try { startRec(); } catch (e) { dbg("dictation would not restart", String(e.name || e)); ears.down = true; if (ears.onDown) ears.onDown(); }
+}
 async function openEars() {
   ears.error = ""; ears.live = false; ears.ignoreUntil = 0;
   if (NATIVE) {
@@ -203,6 +213,10 @@ async function openEars() {
   if (!SR) throw new Error("no dictation");
   ears.want = true; ears.down = false;
   startRec();                                                        // must run straight from the tap
+  // Opening the microphone in the same instant leaves dictation deaf on an iPhone: seen at the start of every round after the
+  // first, where the first word got a voice but no words. Opened at least 0.7s after dictation starts, both have always worked.
+  { const t = performance.now(); while (!ears.live && performance.now() - t < 1500) await wait(50); }
+  await wait(700);
   await wireMic();
   ears.quiet = []; ears.quietest = Infinity;
   clearInterval(ears.poll);
@@ -245,7 +259,7 @@ function listen(key, t0, floor, limitMs = 6000) {
     };
     ears.onLevel = (v, now) => {
       if (onset != null) return;
-      if (now - t0 > 120 && v > low) { if (!seg) seg = now; if (v > line) { if (!high) high = now; if (now - high >= 30) { onset = seg - t0; dbg("voice started", Math.round(onset)); clearTimeout(giveUp); giveUp = setTimeout(() => end(heard ? { right: false, onset, heard } : { unheard: true }), 3200); } } else high = 0; }
+      if (now - t0 > 120 && v > low) { if (!seg) seg = now; if (v > line) { if (!high) high = now; if (now - high >= 30) { onset = seg - t0; dbg("voice started", Math.round(onset)); clearTimeout(giveUp); giveUp = setTimeout(() => end(heard ? { right: false, onset, heard } : { unheard: true, voice: onset != null }), 3200); } } else high = 0; }
       else { high = 0; seg = 0; }
     };
     // Dictation keeps settling earlier words after the game has moved on, sometimes rewriting them into one phrase.
@@ -254,15 +268,19 @@ function listen(key, t0, floor, limitMs = 6000) {
       const now = performance.now(), how = texts.map(t => hears(S, t, key)).find(Boolean), named = !!how;
       if (named && now - t0 > 250) { heard = texts[0]; show1(heard); return end({ right: true, onset, heard, how }); }
       if (onset == null || now < t0 + onset + 200) { dbg("that text came before this word was spoken; ignored"); return; }
+      // Dictation often settles the word before this one a moment after this one has begun. That is not a wrong answer to this word.
+      const prev = R && R.prev;
+      if (final && prev && prev !== key && texts.some(t => t.trim().split(/\s+/).length === 1 && matches(t, prev))) { dbg("that was the last word settling; ignored"); return; }
       heard = texts[0]; show1(heard);
       if (final) { clearTimeout(wrongTimer); wrongTimer = setTimeout(() => end({ right: false, onset, heard }), 1200); }   // time for the right word to follow
     };
     const show1 = t => { const el = document.getElementById("heard"); if (el) el.textContent = "Heard: " + t; };
-    let giveUp = setTimeout(() => end(heard ? { right: false, onset, heard } : { unheard: true }), limitMs);
+    let giveUp = setTimeout(() => end(heard ? { right: false, onset, heard } : { unheard: true, voice: onset != null }), limitMs);
   });
 }
 
 /* ---------- a round ---------- */
+let noTapFailed = false;
 let R = null, T = null;   // R: engine round. T: this round's tally for the screen.
 const voiceMode = () => P.mode === "voice" && (NATIVE || (!!SR && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)));
 async function startRound() {
@@ -272,7 +290,7 @@ async function startRound() {
   if (voice) opening = openEars();                                    // straight from the tap
   say(" ", true);                                                     // phones only let a page speak later if it first speaks from a tap
   { const last = store.get("wb.debug"), old = store.get("wb.debug.old") || []; if (last && last.length) { old.push(last); store.set("wb.debug.old", old.slice(-4)); } }   // keep the four games before this one too
-  DBG.length = 0; dbg0 = performance.now(); dbg("game", { version: VERSION, voice, homeScreen: standalone(), instant: instantMs(S), level: S.level, device: navigator.userAgent });
+  DBG.length = 0; dbg0 = performance.now(); dbg("game", { version: VERSION, voice, speaks: NATIVE ? "the app" : voice ? voice.name : "phone default", homeScreen: standalone(), instant: instantMs(S), level: S.level, device: navigator.userAgent });
   R = newRound(); T = { voice, outs: [], score: 0, combo: 0, maxCombo: 0, burned: [], later: [], fastest: null, stop: false, retried: {}, from: stepsNow(), sideBefore: sideWords() };
   playScreen();
   if (voice) {
@@ -297,6 +315,7 @@ async function playCard(card) {
   if (!R || T.stop) return;
   wordEl.className = ""; wordEl.textContent = show(card.key);
   wordEl.style.fontSize = Math.max(30, Math.min(112, (cardEl.clientWidth - 36) / (Math.max(3, card.key.length) * .6))) + "px";
+  { const room = cardEl.clientWidth - 40, w = wordEl.offsetWidth; if (w > room) wordEl.style.fontSize = Math.floor(parseFloat(wordEl.style.fontSize) * room / w) + "px"; }   // wide letters: shrink to fit
   await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
   const t0 = performance.now(), limit = instantMs(S);
   dbg("SHOW " + card.key, { kind: card.kind, instant: limit, room: +floor.toFixed(4) });
@@ -311,7 +330,11 @@ async function playCard(card) {
       return playCard(card);
     }
     if (r.unheard) {
-      if (!T.retried[card.key]) { T.retried[card.key] = 1; setSay("", "Didn’t catch that", "Say it again."); await wait(900); return playCard(card); }
+      if (!T.retried[card.key]) {
+        T.retried[card.key] = 1;
+        if (r.voice && !NATIVE) { dbg("a voice but no words: starting dictation afresh"); restartDictation(); }
+        setSay("", "Didn’t catch that", "Say it again."); await wait(900); return playCard(card);
+      }
       out = "miss";
     } else { soft = r.how === "close"; heard = r.heard || ""; rt = r.onset || 0; out = !r.right ? "miss" : r.onset != null && r.onset <= limit ? "fast" : "slow"; }
   } else {
@@ -362,6 +385,17 @@ async function settle(card, out, rt, heard, soft) {
         };
         T.tap = go;
         foot.append(h("button", { class: "next", onclick: go }, T.voice ? "Now you say it" : "Next"), canSay ? h("button", { class: "again", onclick: () => say(card.key) }, "Hear it again") : null);
+        // Once the phone has finished saying the word, try to start listening again without waiting for the button.
+        // If the phone will not listen again without a tap, the button comes back, and it is not tried again this visit.
+        if (T.voice && !noTapFailed) spoke.then(async () => {
+          await wait(250); if (T.tap !== go || !R || T.stop) return;
+          T.tap = null; foot.textContent = ""; dbg("going on without a tap");
+          await recoverEars(); await wait(150);
+          if (!R || T.stop || (ears.live && meterAwake())) return res();
+          noTapFailed = true; dbg("could not listen again without a tap");
+          const go2 = () => { if (T.tap !== go2) return; T.tap = null; foot.textContent = ""; recoverEars().then(res, res); };
+          T.tap = go2; foot.append(h("button", { class: "next", onclick: go2 }, "Now you say it"));
+        });
       });
       if (!R || T.stop) return;
       document.getElementById("foot").textContent = "";
