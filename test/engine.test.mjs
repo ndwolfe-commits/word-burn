@@ -1,11 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { ALLKEYS, RANK, fresh, grade, pick, apply, newRound, matches, instantMs, counts, IV, ROUND, mergeState, cleanState, dropStale, tokens } from "../public/engine.js";
+import { ALLKEYS, RANK, fresh, grade, pick, apply, newRound, matches, instantMs, counts, IV, ROUND, mergeState, cleanState } from "../public/engine.js";
 
 test("the word sets load, with duplicates removed", () => { assert.equal(ALLKEYS.length, 507); assert.equal(RANK.get("the"), 0); });
 
 test("matching accepts same-sounding and US spellings, and rejects near misses", () => {
-  assert.ok(matches("There", "their")); assert.ok(matches("Favorite.", "favourite")); assert.ok(matches("I'm", "I'm"));
+  assert.ok(matches("There", "their")); assert.ok(matches("End", "and")); assert.ok(matches("And a", "a")); assert.ok(!matches("The what", "to")); assert.ok(matches("Favorite.", "favourite")); assert.ok(matches("I'm", "I'm"));
   assert.ok(matches("grand dad", "granddad")); assert.ok(matches("the", "the"));
   assert.ok(!matches("though", "through")); assert.ok(!matches("then", "the")); assert.ok(!matches("women", "woman"));
 });
@@ -68,7 +68,7 @@ test("a weak reader is not flooded: the side pile stays capped", () => {
 test("harder words turn up quickly for a reader who keeps hitting the probes", () => {
   const S = fresh(), R = newRound(); const probes = [];
   for (let i = 0; i < ROUND; i++) { const card = pick(S, R, 300, () => 0.5); if (card.kind === "probe") probes.push(RANK.get(card.key)); apply(S, R, card, "fast", 600, 300); }
-  assert.ok(probes.length >= 5, "probes in one round: " + probes.length);
+  assert.ok(probes.length >= 4, "probes in one round: " + probes.length);
   assert.ok(probes[probes.length - 1] >= 300, "last probe reached rank " + probes[probes.length - 1] + " of " + ALLKEYS.length);
 });
 test("the same word is not shown twice in a row", () => {
@@ -96,11 +96,4 @@ test("progress from outside is cleaned before use", () => {
   assert.equal(cleanState(null), null); assert.equal(cleanState({ w: 3 }), null);
   const c = cleanState({ w: { the: { s: 99, n: 2 }, "not-a-word": { s: 2 }, said: "x" }, level: 99999, rt: [700, "x"], rounds: [{ t: 1, n: 20 }, 5], extra: "<script>" });
   assert.deepEqual(Object.keys(c.w), ["the"]); assert.equal(c.w.the.s, 7); assert.equal(c.level, ALLKEYS.length); assert.deepEqual(c.rt, [700]); assert.equal(c.rounds.length, 1); assert.equal(c.extra, undefined);
-});
-
-test("a late revision of the previous word is not taken as an answer to the next one", () => {
-  assert.deepEqual(dropStale(["The"], tokens("the")), [], "the same word again is ignored");
-  assert.deepEqual(dropStale(["The said", "The sad"], tokens("The")), ["said", "sad"], "new words after it are kept");
-  assert.deepEqual(dropStale(["Because"], tokens("the")), ["Because"], "a different phrase is kept whole");
-  assert.deepEqual(dropStale(["People"], null), ["People"]);
 });

@@ -1,8 +1,8 @@
 // Word Burn: the screen, the voice and the fireworks. The rules of the game live in engine.js.
-import { LISTS, ALLKEYS, ROUND, fresh, matches, instantMs, pick, apply, newRound, counts, band, mergeState, cleanState, dropStale, tokens } from "./engine.js";
+import { LISTS, ALLKEYS, ROUND, fresh, matches, instantMs, pick, apply, newRound, counts, band, mergeState, cleanState } from "./engine.js";
 
 const BUILD = "dev";
-const SHORT = "v5";
+const SHORT = "v6";
 const VERSION = "game " + SHORT + " (" + BUILD + ")";
 const OLDKEY = "wb.game.v1", SETKEY = "wb.settings.v1", DEVKEY = "wb.device.v2", stateKey = id => "wb.state." + id;
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -122,10 +122,8 @@ function startRec() {
     let texts = Array.from(r).map(a => a.transcript.trim()).filter(Boolean); if (!texts.length) return;
     const raw = texts.slice();
     if (performance.now() < ears.ignoreUntil) { dbg("text ignored", raw); return; }
-    ears.lastRaw = tokens(texts[0]); ears.lastFinal = r.isFinal;
-    if (ears.stale) { texts = dropStale(texts, ears.stale); if (r.isFinal) ears.stale = null; }     // the previous word, still settling
-    dbg(r.isFinal ? "TEXT" : "text", texts.length === raw.length && texts[0] === raw[0] ? raw : { heard: raw, kept: texts });
-    if (texts.length && ears.onText) ears.onText(texts, r.isFinal);
+    dbg(r.isFinal ? "TEXT" : "text", raw);
+    if (ears.onText) ears.onText(texts, r.isFinal);
   };
   rec.onerror = e => { ears.error = e.error || "error"; dbg("dictation error", ears.error); };
   rec.onend = () => {
@@ -135,30 +133,46 @@ function startRec() {
   };
   rec.start();
 }
-// From a tap: make sure dictation is running again, and forget anything half-heard.
-function reviveEars() {
-  ears.stale = null; ears.lastFinal = true; ears.ignoreUntil = performance.now() + 400;
-  if (ears.live && !ears.down) return;
-  dbg("reviving dictation from a tap");
-  try { ears.rec.onend = null; ears.rec.stop(); } catch (e) {}
-  ears.down = false; ears.error = "";
-  try { startRec(); } catch (e) { dbg("revive refused", String(e.name || e)); ears.down = true; }
+// From a tap, after the phone has spoken a word. Speaking cuts the microphone and dictation off on an iPhone,
+// so start dictation afresh, wake the audio, and reopen the microphone if it has not come back.
+async function recoverEars() {
+  const tr0 = ears.stream && ears.stream.getAudioTracks()[0];
+  dbg("recovering after speaking", { audio: actx && actx.state, micMuted: tr0 ? tr0.muted : null, mic: tr0 ? tr0.readyState : null, dictationOn: ears.live });
+  ears.ignoreUntil = performance.now() + 300; ears.down = false; ears.error = "";
+  try { ears.rec.onend = null; if (ears.rec.abort) ears.rec.abort(); else ears.rec.stop(); } catch (e) {}
+  try { startRec(); } catch (e) { dbg("dictation would not restart", String(e.name || e)); }          // straight from the tap
+  try { if (actx.state !== "running") await actx.resume(); } catch (e) { dbg("audio would not resume", String(e.name || e)); }
+  let tr = ears.stream && ears.stream.getAudioTracks()[0];
+  if (tr && tr.muted) await Promise.race([new Promise(r => tr.addEventListener("unmute", r, { once: true })), wait(700)]);
+  if (!tr || tr.muted || tr.readyState !== "live") {
+    dbg("microphone still cut off; opening it again");
+    try { ears.stream && ears.stream.getTracks().forEach(t => t.stop()); } catch (e) {}
+    try { await wireMic(); } catch (e) { dbg("microphone would not reopen", String(e.name || e)); return false; }
+  }
+  tr = ears.stream.getAudioTracks()[0];
+  dbg("recovered", { audio: actx.state, micMuted: tr.muted, mic: tr.readyState });
+  return true;
+}
+async function wireMic() {
+  ears.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: true, autoGainControl: false } });
+  const tr = ears.stream.getAudioTracks()[0];
+  if (tr) { tr.onmute = () => dbg("microphone muted"); tr.onunmute = () => dbg("microphone back"); tr.onended = () => dbg("microphone ended"); }
+  if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+  if (actx.state !== "running") await actx.resume();
+  actx.onstatechange = () => dbg("audio " + actx.state);
+  ears.analyser = actx.createAnalyser(); ears.analyser.fftSize = 512; ears.analyser.smoothingTimeConstant = 0;
+  actx.createMediaStreamSource(ears.stream).connect(ears.analyser); ears.buf = new Float32Array(512);
 }
 async function openEars() {
   ears.error = ""; ears.live = false; ears.ignoreUntil = 0;
   if (!SR) throw new Error("no dictation");
   ears.want = true; ears.down = false;
   startRec();                                                        // must run straight from the tap
-  ears.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: true, autoGainControl: false } });
-  const tr = ears.stream.getAudioTracks()[0];
-  if (tr) { tr.onmute = () => dbg("microphone muted"); tr.onunmute = () => dbg("microphone back"); tr.onended = () => dbg("microphone ended"); }
-  if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
-  if (actx.state === "suspended") await actx.resume();
-  actx.onstatechange = () => dbg("audio " + actx.state);
-  ears.analyser = actx.createAnalyser(); ears.analyser.fftSize = 512; ears.analyser.smoothingTimeConstant = 0;
-  actx.createMediaStreamSource(ears.stream).connect(ears.analyser); ears.buf = new Float32Array(512);
-  ears.quiet = []; ears.quietest = Infinity; ears.stale = null; ears.lastFinal = true;
+  await wireMic();
+  ears.quiet = []; ears.quietest = Infinity;
+  clearInterval(ears.poll);
   ears.poll = setInterval(() => {
+    if (!ears.analyser) return;
     ears.analyser.getFloatTimeDomainData(ears.buf); let s = 0; for (let i = 0; i < 512; i++) s += ears.buf[i] * ears.buf[i];
     ears.lvl = Math.sqrt(s / 512); if (ears.lvl > ears.peak) ears.peak = ears.lvl; if (ears.onLevel) ears.onLevel(ears.lvl, performance.now());
   }, 10);
@@ -189,7 +203,6 @@ function listen(key, t0, floor, limitMs = 6000) {
     let seg = 0, high = 0, onset = null, heard = "", settled = false, wrongTimer = 0; ears.peak = 0;
     const end = out => {
       if (settled) return; settled = true; clearTimeout(giveUp); clearTimeout(wrongTimer); ears.onLevel = ears.onText = null;
-      ears.stale = heard && !ears.lastFinal ? ears.lastRaw : null;     // dictation may keep revising this phrase after we move on
       dbg("result", Object.assign({ peak: +ears.peak.toFixed(4), dictationOn: ears.live }, out));
       res(out);
     };
@@ -198,12 +211,16 @@ function listen(key, t0, floor, limitMs = 6000) {
       if (now - t0 > 120 && v > low) { if (!seg) seg = now; if (v > line) { if (!high) high = now; if (now - high >= 30) { onset = seg - t0; dbg("voice started", Math.round(onset)); clearTimeout(giveUp); giveUp = setTimeout(() => end(heard ? { right: false, onset, heard } : { unheard: true }), 3200); } } else high = 0; }
       else { high = 0; seg = 0; }
     };
+    // Dictation keeps settling earlier words after the game has moved on, sometimes rewriting them into one phrase.
+    // So a text counts for this word only if it names the word, or arrives after this word's voice has started.
     ears.onText = (texts, final) => {
-      if (performance.now() - t0 < 250) return;                       // leftovers from the word before
-      heard = texts[0]; const el = document.getElementById("heard"); if (el) el.textContent = "Heard: " + heard;
-      if (texts.some(t => matches(t, key))) return end({ right: true, onset, heard });
-      if (final) { clearTimeout(wrongTimer); wrongTimer = setTimeout(() => end({ right: false, onset, heard }), 500); }   // brief grace for a correction
+      const now = performance.now(), named = texts.some(t => matches(t, key));
+      if (named && now - t0 > 250) { heard = texts[0]; show1(heard); return end({ right: true, onset, heard }); }
+      if (onset == null || now < t0 + onset + 200) { dbg("that text came before this word was spoken; ignored"); return; }
+      heard = texts[0]; show1(heard);
+      if (final) { clearTimeout(wrongTimer); wrongTimer = setTimeout(() => end({ right: false, onset, heard }), 1200); }   // time for the right word to follow
     };
+    const show1 = t => { const el = document.getElementById("heard"); if (el) el.textContent = "Heard: " + t; };
     let giveUp = setTimeout(() => end(heard ? { right: false, onset, heard } : { unheard: true }), limitMs);
   });
 }
@@ -223,7 +240,7 @@ async function startRound() {
   if (voice) {
     setSay("", "Getting ready to listen…");
     try { await opening; } catch (e) { dbg("could not open ears", String((e && e.name) || e)); closeEars(); T.voice = false; setSay("", "No microphone this time", "A grown-up can tap instead."); drawFoot(); await wait(1500); }
-    if (T.voice) ears.onDown = () => { if (!R || document.querySelector(".sheet")) return; dbg("asked for a tap to keep listening"); sheet(h("div", null, h("h1", null, "Listening stopped"), h("button", { class: "play", onclick: () => { closeSheet(); reviveEars(); } }, "Keep going"))); };
+    if (T.voice) ears.onDown = () => { if (!R || document.querySelector(".sheet")) return; dbg("asked for a tap to keep listening"); sheet(h("div", null, h("h1", null, "Listening stopped"), h("button", { class: "play", onclick: () => { closeSheet(); recoverEars(); } }, "Keep going"))); };
   }
   await wait(500);
   while (R && !T.stop && R.i < ROUND) {
@@ -273,11 +290,15 @@ async function settle(card, out, rt, heard) {
   } else if (out === "slow") {                                        // 2. right, but not instant: it smoulders and comes back
     wordEl.className = "ember"; sfx.slow(); setSay("slow", "Right! But too slow to burn", rt ? "You took " + secs(rt) + ". Under " + secs(limit) + " and it burns." : "Say it the moment you see it."); await wait(1500); drawShelf();
   } else {                                                            // 3. a miss: show it, say it, and wait for a tap
+    ears.onText = ears.onLevel = null;
     sfx.miss(); setSay("miss", "This word is “" + show(card.key) + "”", ""); await wait(250);
     say(card.key);
     await new Promise(res => {
       const foot = document.getElementById("foot"); foot.textContent = "";
-      const go = () => { T.tap = null; if (T.voice && R && !T.stop) reviveEars(); res(); };
+      const go = () => {
+        if (!T.tap) return; T.tap = null; try { speechSynthesis.cancel(); } catch (e) {}
+        if (T.voice && R && !T.stop) { foot.textContent = ""; recoverEars().then(res, res); } else res();
+      };
       T.tap = go;
       foot.append(h("button", { class: "next", onclick: go }, "Next"), canSay ? h("button", { class: "again", onclick: () => say(card.key) }, "Hear it again") : null);
     });
