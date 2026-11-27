@@ -1,9 +1,10 @@
 // Word Burn: the screen, the voice and the fireworks. The rules of the game live in engine.js.
-import { LISTS, SCHOOL, ALLKEYS, ROUND, fresh, matches, hears, learn, instantMs, pick, apply, newRound, counts, band, mergeState, cleanState } from "./engine.6512dcd7.js";
-import { SUMMIT, W as MW, nextStop, trail, scene, walkPlan, gemSteps, gemsMarkup, climberAt } from "./mountain.6512dcd7.js";
+import { LISTS, SCHOOL, ALLKEYS, ROUND, fresh, matches, hears, learn, instantMs, pick, apply, newRound, counts, band, mergeState, cleanState } from "./engine.ecdb4fbf.js";
+import { voiceStart } from "./hearing.ecdb4fbf.js";
+import { SUMMIT, W as MW, nextStop, trail, scene, walkPlan, gemSteps, gemsMarkup, climberAt } from "./mountain.ecdb4fbf.js";
 
-const BUILD = "6512dcd7";
-const SHORT = "v19";
+const BUILD = "ecdb4fbf";
+const SHORT = "v20";
 const VERSION = "game " + SHORT + " (" + BUILD + ")";
 const OLDKEY = "wb.game.v1", SETKEY = "wb.settings.v1", DEVKEY = "wb.device.v2", stateKey = id => "wb.state." + id;
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -257,8 +258,12 @@ function listen(key, t0, floor, limitMs = 6000) {
       dbg("result", Object.assign({ peak: +ears.peak.toFixed(4), dictationOn: ears.live }, out));
       res(out);
     };
+    const hist = [];                                                 // the sound levels of this word, for working out the start afterwards
+    // No live start, but words have arrived: look back through the levels for where the voice began.
+    const lookBack = () => { if (onset != null) return; const o = voiceStart(hist, t0, floor, ears.peak); if (o != null) { onset = o; dbg("voice start worked out afterwards", { ms: o, room: +floor.toFixed(4), peak: +ears.peak.toFixed(4) }); } };
     ears.onLevel = (v, now) => {
       if (onset != null) return;
+      if (hist.length < 2400) hist.push(now, v);
       if (now - t0 > 120 && v > low) { if (!seg) seg = now; if (v > line) { if (!high) high = now; if (now - high >= 30) { onset = seg - t0; dbg("voice started", Math.round(onset)); clearTimeout(giveUp); giveUp = setTimeout(() => end(heard ? { right: false, onset, heard } : { unheard: true, voice: onset != null }), 3200); } } else high = 0; }
       else { high = 0; seg = 0; }
     };
@@ -266,6 +271,7 @@ function listen(key, t0, floor, limitMs = 6000) {
     // So a text counts for this word only if it names the word, or arrives after this word's voice has started.
     ears.onText = (texts, final) => {
       const now = performance.now(), how = texts.map(t => hears(S, t, key)).find(Boolean), named = !!how;
+      lookBack();
       if (named && now - t0 > 250) { heard = texts[0]; show1(heard); return end({ right: true, onset, heard, how }); }
       if (onset == null || now < t0 + onset + 200) { dbg("that text came before this word was spoken; ignored"); return; }
       // Dictation often settles the word before this one a moment after this one has begun. That is not a wrong answer to this word.
