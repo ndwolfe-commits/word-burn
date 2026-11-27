@@ -3,8 +3,8 @@
 Read this first in a new session. It records what is built, what was decided and why, and what comes next.
 
 ## Live
-- Web game v14 at https://ndwolfe-commits.github.io/word-burn/ (branch `gh-pages`, built from `main` by `scripts/build.mjs`; publish steps are in the README).
-- 31 tests (`npm test`). A phone-like voice test lives outside the repo and should be rebuilt as a proper test.
+- Web game v15 at https://ndwolfe-commits.github.io/word-burn/ (branch `gh-pages`, built from `main` by `scripts/build.mjs`; publish steps are in the README).
+- 40 tests (`npm test`). A phone-like voice test lives outside the repo and should be rebuilt as a proper test.
 
 ## The words
 - `scripts/make-words.py` builds `public/words.js` from `data/school-lists.json` (the school's sheet: Letters and Sounds high-frequency words plus the national curriculum spelling lists) and the 200 commonest English words the sheet leaves out.
@@ -19,6 +19,14 @@ Read this first in a new session. It records what is built, what was decided and
 - A new word is held back while a look-alike is in practice.
 - Hearing: exact match; or the reader's own learned way of saying it; or a near miss given the benefit of the doubt, which puts the word on a shorter leash. A different word from the list is never forgiven. These three are on probation: remove them if the first real child's record shows they never fire.
 
+## The mountain (built in v15)
+- The first screen. One step for every burned word, 707 to the summit; a camp where each set ends (100, 200, 300, 400, 500, 557). It reads the engine's counts and changes no rule.
+- After a round the climber walks from where he was to where he is, lighting stones and stopping to cheer at a camp. He never walks down: if words were forgotten he simply stands lower next time.
+- Words in practice show as gems on the stones ahead ("words to pick up"); ones burned in the round are collected as he passes.
+- Two numbers: steps of 707, and the school sheet of 507.
+- `public/mountain.js` holds the path, camps and drawing; `game.js` puts it on screen. The climber is a stand-in drawn by one function, `climber()`: the child chooses the real one.
+- Checked in a phone-sized Chrome on a computer (new player, part way, summit, small screen, a tapped round crossing a camp). Not yet seen on a real iPhone, and the walk has not been seen after a voice round.
+
 ## The iPhone app
 - `ios/` is a thin shell: a web view showing the same game, with listening and speaking done natively (`ios/App/Ears.swift`). The page talks to it through `window.webkit.messageHandlers.ears` and `window.__ears`.
 - It compiles on GitHub's Macs (`.github/workflows/ios.yml`). It has never run on a phone.
@@ -26,7 +34,7 @@ Read this first in a new session. It records what is built, what was decided and
 - Blocked on: the Apple Developer membership going from Pending to active, then an App Store Connect API key (Admin role) added as GitHub secrets by the owner, never pasted into a chat. After that: signing, TestFlight upload, first real round.
 
 ## Agreed, not started
-1. The mountain: 707 steps, camps at each set, the climber walks up after each round, shown on opening. The child picks the climber.
+1. The child picks the climber for the mountain.
 2. Family sync: the Worker in `src/worker.js` is written and tested locally; it needs `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` as GitHub secrets.
 3. A second app, Senet (its own repository), through the same App Store pipeline.
 

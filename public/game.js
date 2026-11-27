@@ -1,8 +1,9 @@
 // Word Burn: the screen, the voice and the fireworks. The rules of the game live in engine.js.
 import { LISTS, SCHOOL, ALLKEYS, ROUND, fresh, matches, hears, learn, instantMs, pick, apply, newRound, counts, band, mergeState, cleanState } from "./engine.js";
+import { SUMMIT, W as MW, trail, scene, walkPlan, gemSteps, gemsMarkup, climberAt } from "./mountain.js";
 
 const BUILD = "dev";
-const SHORT = "v14";
+const SHORT = "v15";
 const VERSION = "game " + SHORT + " (" + BUILD + ")";
 const OLDKEY = "wb.game.v1", SETKEY = "wb.settings.v1", DEVKEY = "wb.device.v2", stateKey = id => "wb.state." + id;
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -257,7 +258,7 @@ async function startRound() {
   say(" ", true);                                                     // phones only let a page speak later if it first speaks from a tap
   { const last = store.get("wb.debug"), old = store.get("wb.debug.old") || []; if (last && last.length) { old.push(last); store.set("wb.debug.old", old.slice(-4)); } }   // keep the four games before this one too
   DBG.length = 0; dbg0 = performance.now(); dbg("game", { version: VERSION, voice, homeScreen: standalone(), instant: instantMs(S), level: S.level, device: navigator.userAgent });
-  R = newRound(); T = { voice, outs: [], score: 0, combo: 0, maxCombo: 0, burned: [], later: [], fastest: null, stop: false, retried: {} };
+  R = newRound(); T = { voice, outs: [], score: 0, combo: 0, maxCombo: 0, burned: [], later: [], fastest: null, stop: false, retried: {}, from: stepsNow(), sideBefore: sideWords() };
   playScreen();
   if (voice) {
     setSay("", "Getting ready to listen…");
@@ -356,32 +357,97 @@ function endRound() {
   const sideNow = ALLKEYS.filter(k => band(S, k) === "side");
   for (let i = 0; i < 5; i++) setTimeout(() => burst(innerWidth * (.1 + Math.random() * .8), innerHeight * (.1 + Math.random() * .35), 60, 6, i), i * 180);
   sync().then(ok => { const n2 = document.getElementById("saved"); if (n2 && D.family) n2.textContent = ok ? "Saved to the family." : "Saved on this phone. It will reach the family next time."; });
-  put("sum",
-    h("h1", null, "Round ", h("b", null, "done")),
+  const to = stepsNow(), plan = walkPlan(T0.from, to), walking = plan.end > plan.start;
+  const picked = walking ? Math.min(plan.end - plan.start, T0.sideBefore.filter(k => band(S, k) !== "side").length) : 0;
+  const m = mountain(plan.start, walking ? picked : sideNow.length);
+  put("mtn",
+    h("div", { class: "row spread" }, h("div", { class: "done" }, "Round ", h("b", null, "done")), numbersLine(plan.start)),
+    m.wrap,
     h("div", { class: "trio" },
       h("div", null, h("b", null, T0.burned.length), h("span", null, "new words burned")),
       h("div", null, h("b", null, T0.maxCombo), h("span", null, "best run")),
       h("div", null, h("b", null, T0.fastest ? secs(T0.fastest.rt) : "–"), h("span", null, T0.fastest ? "fastest: " + show(T0.fastest.key) : "fastest"))),
-    sideNow.length ? h("div", { class: "shelf", style: "justify-content:center" }, h("span", { class: "lab" }, "Coming back"), sideNow.slice(0, 8).map(k => h("span", { class: "chip" }, show(k)))) : null,
-    h("button", { class: "play", onclick: startRound }, "Again"),
-    h("button", { class: "ghost", style: "max-width:240px", onclick: home }, "Done for now"),
-    h("div", { class: "muted small", id: "saved" }));
+    sideNow.length ? h("div", { class: "shelf", style: "justify-content:center" }, h("span", { class: "lab" }, "To pick up next climb"), sideNow.slice(0, 8).map(k => h("span", { class: "chip" }, show(k)))) : null,
+    h("div", { class: "row" }, h("button", { class: "ghost", style: "width:auto;flex:none", onclick: home }, "Done"), h("button", { class: "play", style: "flex:1", onclick: startRound }, "Again")),
+    h("div", { class: "muted small", id: "saved", style: "text-align:center;min-height:0" }));
+  m.show(plan.start);
+  if (walking) wait(700).then(() => m.walk(plan, picked)).then(ok => { if (ok) { m.gems(plan.end, sideNow.length); const n = document.getElementById("nsteps"); if (n) n.textContent = plan.end; } });
+}
+
+/* ---------- the mountain ---------- */
+// One step for every burned word. The path, camps and drawing are in mountain.js; this part puts it on the screen and walks the climber.
+const TRAIL = trail();
+function stepsNow() { const c = counts(S); return Math.min(SUMMIT, c.burned + c.locked); }
+function sideWords() { return ALLKEYS.filter(k => band(S, k) === "side"); }
+function schoolNow() { const c = counts(S, SCHOOL); return c.burned + c.locked; }
+function numbersLine(steps) { return h("div", { class: "nums" }, h("span", null, "🔥 ", h("b", { id: "nsteps" }, steps), " of " + SUMMIT), h("span", { class: "sch" }, "School ", h("b", null, schoolNow()), " of " + SCHOOL.length)); }
+function mountain(at, gemCount) {
+  const box = h("div", { class: "mtn-scroll", id: "mtn" }), banner = h("div", { class: "mtn-banner", "aria-live": "polite" }), map = h("div", { class: "mtn-map", "aria-hidden": "true" });
+  const wrap = h("div", { class: "mtn-wrap" }, box, map, banner);
+  box.innerHTML = scene(TRAIL, at, gemSteps(at, gemCount));
+  const svg = box.firstElementChild, who = svg.querySelector("#climber"), stones = svg.querySelector("#stones").children, gemBox = svg.querySelector("#gems");
+  const scale = () => (svg.clientWidth || MW) / MW;
+  const fit = () => { svg.style.height = Math.round(scale() * TRAIL.height) + "px"; };
+  const look = y => { box.scrollTop = y * scale() - box.clientHeight * .6; };
+  const mark = n => { map.innerHTML = '<svg viewBox="0 0 44 44"><polygon points="4,40 22,6 40,40" fill="#2b3f78" stroke="#a3b3d6" stroke-width="1.5" stroke-linejoin="round"/><polygon points="22,6 17,15.5 27,15.5" fill="#eef3ff"/><circle cx="22" cy="' + (38 - 28 * n / SUMMIT).toFixed(1) + '" r="4" fill="#ffb21e" stroke="#0d1830" stroke-width="1.5"/></svg>'; };
+  const say1 = text => { banner.textContent = text; banner.classList.remove("go"); void banner.offsetWidth; banner.classList.add("go"); };
+  const here = n => { const r = svg.getBoundingClientRect(), k = scale(), p = TRAIL.pts[n]; return [r.left + p.x * k, r.top + p.y * k]; };
+  const onResize = () => { if (!box.isConnected) return removeEventListener("resize", onResize); fit(); };
+  addEventListener("resize", onResize);
+  let face = 1;
+  const hop = (a, b, ms) => new Promise(res => {
+    if (b.x !== a.x) face = b.x < a.x ? -1 : 1;
+    const t0 = performance.now(), f = now => {
+      const t = Math.min(1, (now - t0) / ms), y = a.y + (b.y - a.y) * t;
+      who.setAttribute("transform", climberAt({ x: a.x + (b.x - a.x) * t, y: y - Math.sin(Math.PI * t) * 9 }, face)); look(y);
+      t < 1 ? requestAnimationFrame(f) : res();
+    };
+    requestAnimationFrame(f);
+  });
+  return {
+    wrap,
+    show(n) { fit(); look(TRAIL.pts[n].y); mark(n); },
+    gems(n, count) { gemBox.innerHTML = gemsMarkup(TRAIL, gemSteps(n, count)); },
+    // Walk up from plan.start to plan.end, lighting each stone, picking up the first `picked` gems, and stopping to cheer at a camp.
+    // Resolves false if the screen was left part-way.
+    async walk(plan, picked) {
+      const still = matchMedia("(prefers-reduced-motion: reduce)").matches, n = plan.end - plan.start, ms = Math.max(70, Math.min(260, 4500 / n));
+      for (let i = plan.start; i < plan.end; i++) {
+        if (!box.isConnected) return false;
+        if (still) { who.setAttribute("transform", climberAt(TRAIL.pts[i + 1])); look(TRAIL.pts[i + 1].y); } else await hop(TRAIL.pts[i], TRAIL.pts[i + 1], ms);
+        stones[i + 1].classList.add("on"); tone(520 + ((i - plan.start) % 8) * 40, 0, .06, .04);
+        const gem = gemBox.querySelector('[data-s="' + (i + 1) + '"]');
+        if (gem) { gem.classList.add("pop"); tone(1320, 0, .12, .07); tone(1760, .07, .16, .06); }
+        const camp = plan.camps.find(c => c.n === i + 1), topped = plan.summit && i + 1 === plan.end;
+        if (camp || topped) {
+          if (camp) { const g = svg.querySelector('.camp[data-n="' + camp.n + '"]'); if (g) g.classList.add("lit"); }
+          say1(topped ? "The summit!" : camp.name + "!"); sfx.done(); mark(i + 1);
+          const [x, y] = here(i + 1); for (let k = 0; k < (topped ? 6 : 3); k++) setTimeout(() => burst(x + (Math.random() - .5) * 160, y - 40 - Math.random() * 120, 60, 6, k), k * 170);
+          await wait(topped ? 1800 : 1100);
+        }
+      }
+      if (!box.isConnected) return false;
+      who.setAttribute("transform", climberAt(TRAIL.pts[plan.end], face)); mark(plan.end); return true;
+    }
+  };
 }
 
 /* ---------- screens ---------- */
 function home() {
   const p = me(); if (!p) return who();
-  const c = counts(S), total = c.burned + c.locked;
-  put("home",
-    h("button", { class: "icon corner", "aria-label": "Settings", onclick: grownUps }, "⚙"),
-    h("div", { class: "flame", "aria-hidden": "true" }, "🔥"),
-    h("div", { class: "logo" }, "Word", h("b", null, "Burn")),
-    h("button", { class: "name", onclick: who }, p.name, h("span", null, "  change")),
-    h("div", { class: "tally" }, h("b", { id: "tally" }, total), total === 1 ? "word burned" : "words burned"),
+  const at = stepsNow(), side = sideWords(), m = mountain(at, side.length);
+  const streak = S.streak.n > 1 && (S.streak.d === new Date().toDateString() || S.streak.d === new Date(Date.now() - 864e5).toDateString()) ? S.streak.n + " days in a row · " : "";
+  put("mtn",
+    h("div", { class: "row spread" }, h("button", { class: "name", onclick: who }, p.name, h("span", null, "  change")), h("div", { class: "brand" }, "Word ", h("b", null, "Burn")), h("button", { class: "icon", "aria-label": "Settings", onclick: grownUps }, "⚙")),
+    m.wrap,
+    side.length ? h("div", { class: "pickup" }, "💎 " + side.length + (side.length === 1 ? " word" : " words") + " to pick up on the next climb") : null,
+    h("div", { class: "tiles" },
+      h("div", null, h("b", { id: "tally" }, at), h("span", null, at === 1 ? "step of " + SUMMIT : "steps of " + SUMMIT)),
+      h("div", { class: "sch" }, h("b", null, schoolNow()), h("span", null, "school sheet, of " + SCHOOL.length))),
     h("button", { class: "play", id: "play", onclick: startRound }, "Play"),
-    S.streak.n > 1 && (S.streak.d === new Date().toDateString() || S.streak.d === new Date(Date.now() - 864e5).toDateString()) ? h("div", { class: "muted" }, S.streak.n + " days in a row") : null,
-    h("div", { class: "ver" }, SHORT));
-  if (D.family) sync().then(ok => { if (ok && app.className === "home" && !document.querySelector(".sheet")) { const c2 = counts(S), t = document.getElementById("tally"); if (t) t.textContent = c2.burned + c2.locked; } });
+    h("div", { class: "muted small", style: "text-align:center" }, streak + SHORT));
+  m.show(at);
+  if (D.family) sync().then(ok => { if (ok && app.className === "mtn" && document.getElementById("play") && !document.querySelector(".sheet") && stepsNow() !== at) home(); });
 }
 function who() {
   const input = h("input", { id: "newname", type: "text", maxlength: "20", placeholder: "Your name", autocomplete: "off", autocapitalize: "words", enterkeyhint: "done" });

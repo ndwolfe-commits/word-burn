@@ -4,7 +4,7 @@
 import fs from "node:fs"; import path from "node:path"; import crypto from "node:crypto";
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), ".."), src = path.join(root, "public"), out = path.join(root, "dist");
 const read = f => fs.readFileSync(path.join(src, f), "utf8");
-const scripts = ["words.js", "engine.js", "game.js"];
+const scripts = ["words.js", "engine.js", "mountain.js", "game.js"];
 const v = crypto.createHash("sha1").update(scripts.map(read).join("\n")).digest("hex").slice(0, 8);
 fs.rmSync(out, { recursive: true, force: true }); fs.mkdirSync(out, { recursive: true });
 for (const f of fs.readdirSync(src)) if (!scripts.includes(f) && f !== "index.html") fs.copyFileSync(path.join(src, f), path.join(out, f));
