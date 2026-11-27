@@ -6,6 +6,9 @@ const SHORT = "v8";
 const VERSION = "game " + SHORT + " (" + BUILD + ")";
 const OLDKEY = "wb.game.v1", SETKEY = "wb.settings.v1", DEVKEY = "wb.device.v2", stateKey = id => "wb.state." + id;
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+// Inside the iPhone app the listening and speaking are done by the app itself; this page only receives sound levels and heard texts.
+const NATIVE = !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.ears);
+const tell = m => { try { window.webkit.messageHandlers.ears.postMessage(m); } catch (e) {} };
 const store = { get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} } };
 let P = Object.assign({ mode: "voice", sound: true }, store.get(SETKEY) || {});
 // This phone's players, who is playing now, and the family code if it has joined one.
@@ -101,6 +104,10 @@ const sfx = { fast() { tone(700, 0, .08); tone(1050, .06, .1); tone(1400, .12, .
 /* ---------- saying a word aloud ---------- */
 const canSay = "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
 function say(text, quiet) {
+  if (NATIVE) return quiet ? Promise.resolve(true) : new Promise(res => {
+    let done = false; const end = ok => { if (!done) { done = true; ears.said = null; dbg("spoke", ok ? "ok" : "no end signal"); res(ok); } };
+    ears.said = () => end(true); tell({ cmd: "say", text }); setTimeout(() => end(false), 3000);
+  });
   return new Promise(res => {
     if (!canSay) return res(false);
     try {
@@ -114,6 +121,12 @@ function say(text, quiet) {
 
 /* ---------- ears: the microphone times the start, the phone's dictation names the word ---------- */
 const ears = { stream: null, analyser: null, buf: null, rec: null, want: false, down: false, poll: 0, lvl: 0, quiet: [], quietest: Infinity, onText: null, onLevel: null, error: "", stale: null, lastRaw: [], lastFinal: true, live: false, ignoreUntil: 0, peak: 0 };
+if (NATIVE) window.__ears = {
+  levels(list) { for (const [v, wall] of list) { ears.lvl = v; if (v > ears.peak) ears.peak = v; if (ears.onLevel) ears.onLevel(v, wall - performance.timeOrigin); } },
+  text(texts, final) { dbg(final ? "TEXT" : "text", texts); if (ears.onText) ears.onText(texts, !!final); },
+  state(s) { dbg("app ears: " + s); ears.live = s === "on"; if (ears.opened) ears.opened(s); },
+  said() { if (ears.said) ears.said(); }
+};
 function startRec() {
   const rec = ears.rec = new SR(); rec.lang = "en-GB"; rec.continuous = true; rec.interimResults = true; rec.maxAlternatives = 3;
   rec.onstart = () => { ears.live = true; dbg("dictation on"); };
@@ -136,6 +149,7 @@ function startRec() {
 // From a tap, after the phone has spoken a word. Speaking cuts the microphone and dictation off on an iPhone,
 // so start dictation afresh, wake the audio, and reopen the microphone if it has not come back.
 async function recoverEars() {
+  if (NATIVE) return true;                                           // the app keeps one audio channel; speaking does not cut it
   const tr0 = ears.stream && ears.stream.getAudioTracks()[0];
   dbg("recovering after speaking", { audio: actx && actx.state, micMuted: tr0 ? tr0.muted : null, mic: tr0 ? tr0.readyState : null, dictationOn: ears.live });
   ears.ignoreUntil = performance.now() + 300; ears.down = false; ears.error = "";
@@ -165,6 +179,11 @@ async function wireMic() {
 }
 async function openEars() {
   ears.error = ""; ears.live = false; ears.ignoreUntil = 0;
+  if (NATIVE) {
+    ears.want = true; ears.down = false; ears.quiet = []; ears.quietest = Infinity;
+    await new Promise((res, rej) => { ears.opened = st => { ears.opened = null; st === "on" ? res() : rej(new Error(st)); }; tell({ cmd: "open" }); setTimeout(() => rej(new Error("no answer from the app")), 15000); });
+    return;
+  }
   if (!SR) throw new Error("no dictation");
   ears.want = true; ears.down = false;
   startRec();                                                        // must run straight from the tap
@@ -178,6 +197,7 @@ async function openEars() {
   }, 10);
 }
 function closeEars() {
+  if (NATIVE) tell({ cmd: "close" });
   ears.want = false; clearInterval(ears.poll); ears.onText = ears.onLevel = ears.onDown = null;
   try { ears.rec && ears.rec.stop(); } catch (e) {}
   try { ears.stream && ears.stream.getTracks().forEach(t => t.stop()); } catch (e) {}
@@ -201,6 +221,7 @@ function listen(key, t0, floor, limitMs = 6000) {
   return new Promise(res => {
     const low = Math.min(0.04, Math.max(floor * 5, 0.0015)), line = Math.min(0.08, Math.max(floor * 12, 0.004));
     let seg = 0, high = 0, onset = null, heard = "", settled = false, wrongTimer = 0; ears.peak = 0;
+    if (NATIVE) tell({ cmd: "word", key });                          // a fresh recogniser for each word, told which word to expect
     const end = out => {
       if (settled) return; settled = true; clearTimeout(giveUp); clearTimeout(wrongTimer); ears.onLevel = ears.onText = null;
       dbg("result", Object.assign({ peak: +ears.peak.toFixed(4), dictationOn: ears.live }, out));
@@ -227,7 +248,7 @@ function listen(key, t0, floor, limitMs = 6000) {
 
 /* ---------- a round ---------- */
 let R = null, T = null;   // R: engine round. T: this round's tally for the screen.
-const voiceMode = () => P.mode === "voice" && !!SR && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+const voiceMode = () => P.mode === "voice" && (NATIVE || (!!SR && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)));
 async function startRound() {
   if (!actx) { try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
   if (actx && actx.state === "suspended") actx.resume().catch(() => {});
@@ -415,7 +436,7 @@ function grownUps() {
     side.length ? [h("h2", null, "Coming back (" + side.length + ")"), h("p", { class: "small" }, side.map(show).join(", "))] : null,
     S.log.length ? [h("h2", null, "Recent misses and what the phone heard"), h("p", { class: "small" }, S.log.slice(-10).reverse().map(r => show(r.k) + " → “" + r.heard + "”").join(", "))] : null,
     h("h2", null, "How answers are checked"),
-    SR ? h("div", { class: "seg" }, opt("mode", "voice", "The phone listens"), opt("mode", "tap", "A grown-up taps")) : h("p", { class: "small muted" }, "This browser has no dictation, so a grown-up taps Got it or Not yet."),
+    SR || NATIVE ? h("div", { class: "seg" }, opt("mode", "voice", "The phone listens"), opt("mode", "tap", "A grown-up taps")) : h("p", { class: "small muted" }, "This browser has no dictation, so a grown-up taps Got it or Not yet."),
     h("h2", null, "Sounds"), h("div", { class: "seg" }, opt("sound", true, "On"), opt("sound", false, "Off")),
     h("h2", null, "How it works"),
     h("p", { class: "small" }, "A word read right and instantly burns. Instant is set from the reader’s own speed, currently within " + secs(instantMs(S)) + (S.rt.length < 6 ? " (a starting value until it has timed a few reads)" : "") + "."),
