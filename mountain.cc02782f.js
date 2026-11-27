@@ -1,6 +1,6 @@
 // Word Burn mountain: where the path goes and how the mountain is drawn. No rules of the game live here:
 // it only turns a number of burned words into a place on the path.
-import { LISTS, ALLKEYS } from "./engine.54f35c2b.js";
+import { LISTS, ALLKEYS } from "./engine.cc02782f.js";
 
 export const SUMMIT = ALLKEYS.length;                 // one step for every word
 // A camp where each set of words ends. The last set ends at the summit, so it has no camp of its own.
