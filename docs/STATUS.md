@@ -3,7 +3,7 @@
 Read this first in a new session. It records what is built, what was decided and why, and what comes next.
 
 ## Live
-- Web game v16 at https://ndwolfe-commits.github.io/word-burn/ (branch `gh-pages`, built from `main` by `scripts/build.mjs`; publish steps are in the README).
+- Web game v17 at https://ndwolfe-commits.github.io/word-burn/ (branch `gh-pages`, built from `main` by `scripts/build.mjs`; publish steps are in the README).
 - 41 tests (`npm test`). A phone-like voice test lives outside the repo and should be rebuilt as a proper test.
 
 ## The words
@@ -29,7 +29,7 @@ Read this first in a new session. It records what is built, what was decided and
 
 ## First round on a real iPhone (v15, Safari, an adult reading)
 - The mountain and the walk worked. All 20 words were heard right first time, but the reader had to be close to the phone and speak clearly; the loudest levels in the record were low (0.010 to 0.025).
-- Not yet known whether the weak link is the phone's dictation or the game's own voice-start line. Nothing in the listening code was changed. The iPhone app listens differently (it tells the recogniser which word to expect), so judge it there first.
+- Not yet known whether the weak link is the phone's dictation or the game's own voice-start line. In v17 a trial switch was added in Settings, "Microphone (a trial)": Hears quieter voices asks the phone to turn a quiet voice up (the microphone's automatic gain). Off by default, web version only, never tried on a real phone before publishing. The game record now says which setting was used and whether the phone honoured it. Keep it or remove it once a real record shows whether it helps. The iPhone app listens differently (it tells the recogniser which word to expect), so judge it there first.
 - Wispr Flow was looked at as a replacement: its API is by approval only and runs on their servers, which breaks "the voice never leaves the phone". Not pursued.
 
 ## The iPhone app
