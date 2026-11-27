@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { ALLKEYS, RANK, fresh, grade, pick, apply, newRound, matches, instantMs, counts, IV, ROUND, mergeState, cleanState, mood } from "../public/engine.js";
+import { ALLKEYS, RANK, fresh, grade, pick, apply, newRound, matches, instantMs, counts, IV, ROUND, mergeState, cleanState, mood, alike } from "../public/engine.js";
 
 test("the word sets load, with duplicates removed", () => { assert.equal(ALLKEYS.length, 707); assert.equal(RANK.get("the"), 0); });
 
@@ -137,4 +137,14 @@ test("an owned word that is due its check is used as the easy card after a miss"
   for (let i = 0; i < 6; i++) apply(S, R, pick(S, R, 300, () => 0.5), "fast", 600, 300);
   const R2 = newRound(); const first = pick(S, R2, 310, () => 0.5); apply(S, R2, first, "miss", 0, 310);
   const next = pick(S, R2, 310, () => 0.5); assert.equal(next.kind, "check"); assert.ok(next.lift); assert.ok(S.w[next.key].d <= 310);
+});
+test("look-alike words are recognised", () => {
+  for (const [a, b] of [["was", "saw"], ["though", "through"], ["thought", "through"], ["will", "well"], ["where", "were"], ["look", "looks"], ["form", "from"]]) assert.ok(alike(a, b), a + " / " + b);
+  for (const [a, b] of [["said", "they"], ["the", "and"], ["house", "about"], ["is", "it"]]) assert.ok(!alike(a, b), a + " / " + b);
+});
+test("a new word is held back while its look-alike is still being practised", () => {
+  const S = fresh(); S.w.through = { s: 1, d: 0, r: 0, n: 1, m: 1, b: 0 }; S.level = RANK.get("though") - 3;
+  const seen = [];
+  for (let r = 0; r < 4; r++) { const R = newRound(); for (let i = 0; i < ROUND; i++) { const card = pick(S, R, 300, () => 0.5); if (card.kind !== "side") seen.push(card.key); apply(S, R, card, card.key === "through" ? "miss" : "fast", 600, 300); } }
+  assert.ok(!seen.includes("though") && !seen.includes("thought"), "shown while 'through' was in practice: " + seen.filter(k => alike(k, "through")).join(" "));
 });

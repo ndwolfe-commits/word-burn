@@ -2,7 +2,8 @@
 name: iOS
 on:
   push:
-    branches: [ios]
+    branches: [main]
+    paths: ["ios/**", "public/**", "scripts/**", ".github/workflows/ios.yml"]
 jobs:
   build:
     runs-on: macos-15

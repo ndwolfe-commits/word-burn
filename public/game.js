@@ -2,7 +2,7 @@
 import { LISTS, SCHOOL, ALLKEYS, ROUND, fresh, matches, instantMs, pick, apply, newRound, counts, band, mergeState, cleanState } from "./engine.js";
 
 const BUILD = "dev";
-const SHORT = "v11";
+const SHORT = "v12";
 const VERSION = "game " + SHORT + " (" + BUILD + ")";
 const OLDKEY = "wb.game.v1", SETKEY = "wb.settings.v1", DEVKEY = "wb.device.v2", stateKey = id => "wb.state." + id;
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -314,18 +314,32 @@ async function settle(card, out, rt, heard) {
   } else {                                                            // 3. a miss: show it, say it, and wait for a tap
     ears.onText = ears.onLevel = null;
     sfx.miss(); setSay("miss", "This word is “" + show(card.key) + "”", ""); await wait(250);
-    say(card.key);
-    await new Promise(res => {
-      const foot = document.getElementById("foot"); foot.textContent = "";
-      const go = () => {
-        if (!T.tap) return; T.tap = null; try { speechSynthesis.cancel(); } catch (e) {}
-        if (T.voice && R && !T.stop) { foot.textContent = ""; recoverEars().then(res, res); } else res();
-      };
-      T.tap = go;
-      foot.append(h("button", { class: "next", onclick: go }, "Next"), canSay ? h("button", { class: "again", onclick: () => say(card.key) }, "Hear it again") : null);
-    });
+    const spoke = say(card.key);
+    // The reader says the word back. Saying it after a miss, not just hearing it, is what the drill studies found makes it stick.
+    const echo = async () => {
+      if (!T.voice || !R || T.stop) return;
+      setSay("miss", "Your turn. Say “" + show(card.key) + "”", "");
+      const floor = await quietRoom(); if (!R || T.stop) return;
+      const r = await listen(card.key, performance.now(), floor, 5000); if (!R || T.stop) return;
+      dbg("said back " + card.key, { right: !!r.right, heard: r.heard || "" }); saveDbg();
+      if (r.right) { sfx.slow(); setSay("slow", "That’s it!", ""); await wait(600); }
+    };
+    if (NATIVE && T.voice) { await spoke; await wait(150); await echo(); }
+    else {
+      await new Promise(res => {
+        const foot = document.getElementById("foot"); foot.textContent = "";
+        const go = () => {
+          if (!T.tap) return; T.tap = null; try { speechSynthesis.cancel(); } catch (e) {}
+          if (T.voice && R && !T.stop) { foot.textContent = ""; recoverEars().then(res, res); } else res();
+        };
+        T.tap = go;
+        foot.append(h("button", { class: "next", onclick: go }, T.voice ? "Now you say it" : "Next"), canSay ? h("button", { class: "again", onclick: () => say(card.key) }, "Hear it again") : null);
+      });
+      if (!R || T.stop) return;
+      document.getElementById("foot").textContent = "";
+      await echo();
+    }
     if (!R || T.stop) return;
-    document.getElementById("foot").textContent = "";
     wordEl.className = "drop"; await wait(450); drawShelf(); await wait(200);
   }
 }
