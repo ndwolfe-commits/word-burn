@@ -1,5 +1,5 @@
 // Word Burn engine: which word comes next, and what a reading does to it. No screen or microphone code here.
-import { LISTS, ALT } from "./words.822db273.js";
+import { LISTS, ALT, SCHOOL } from "./words.c4f7c60a.js";
 
 export const ALLKEYS = [];
 { const seen = new Set(); for (const l of LISTS) for (const w of l.words) if (!seen.has(w)) { seen.add(w); ALLKEYS.push(w); } }
@@ -12,7 +12,8 @@ export const ROUND = 20;
 export const SPRINT = 5;                           // cards at the end of a round given to the very short words
 export const MAX_CHECKS = 5;                      // checks of burned words per round, so new words keep flowing
 
-export const fresh = () => ({ v: 1, gen: 0, updated: 0, w: {}, level: 30, step: 40, found: 0, rt: [], burned: 0, streak: { d: "", n: 0 }, best: { combo: 0 }, rounds: [], log: [] });
+// lv is the version of the word order that `level` counts along; an older order's level is started again.
+export const fresh = () => ({ v: 1, lv: 2, gen: 0, updated: 0, w: {}, level: 30, step: 40, found: 0, rt: [], burned: 0, streak: { d: "", n: 0 }, best: { combo: 0 }, rounds: [], log: [] });
 export const day = (d = new Date()) => Math.floor((d.getTime() - d.getTimezoneOffset() * 6e4) / 864e5);
 
 // --- matching what was heard against the word shown ---
@@ -118,12 +119,13 @@ export function mergeState(a, b) {
 export function cleanState(x) {
   if (!x || typeof x !== "object" || typeof x.w !== "object" || !x.w) return null;
   const w = {}; let n = 0;
-  for (const k of Object.keys(x.w)) { if (!RANK.has(k) || ++n > 600) continue; const v = x.w[k]; if (!v || typeof v !== "object") continue; const o = { s: Math.max(1, Math.min(7, v.s | 0)), d: v.d | 0, r: v.r | 0, n: v.n | 0, m: v.m | 0, b: v.b | 0 }; if (v.k) o.k = 1; w[k] = o; }
+  for (const k of Object.keys(x.w)) { if (!RANK.has(k) || ++n > 900) continue; const v = x.w[k]; if (!v || typeof v !== "object") continue; const o = { s: Math.max(1, Math.min(7, v.s | 0)), d: v.d | 0, r: v.r | 0, n: v.n | 0, m: v.m | 0, b: v.b | 0 }; if (v.k) o.k = 1; w[k] = o; }
   const num = (v, d) => (Number.isFinite(v) ? v : d), str = v => String(v == null ? "" : v).slice(0, 40);
+  if ((x.lv | 0) < 2) x = Object.assign({}, x, { level: 30, step: 40, found: 0 });   // the words were reordered: look for the reader's edge afresh
   return Object.assign(fresh(), { gen: x.gen | 0, updated: num(x.updated, 0), w, level: Math.max(0, Math.min(ALLKEYS.length, x.level | 0)), step: Math.max(10, Math.min(160, (x.step | 0) || 40)), found: x.found ? 1 : 0, rt: (Array.isArray(x.rt) ? x.rt : []).filter(Number.isFinite).slice(-20),
     streak: { d: str(x.streak && x.streak.d), n: (x.streak && x.streak.n) | 0 }, best: { combo: (x.best && x.best.combo) | 0 },
     rounds: (Array.isArray(x.rounds) ? x.rounds : []).filter(r => r && Number.isFinite(r.t)).slice(-60).map(r => ({ t: r.t, n: r.n | 0, fast: r.fast | 0, miss: r.miss | 0, voice: r.voice ? 1 : 0 })),
     log: (Array.isArray(x.log) ? x.log : []).filter(r => r && Number.isFinite(r.t)).slice(-30).map(r => ({ t: r.t, k: str(r.k), heard: str(r.heard) })),
     burned: Object.values(w).filter(v => v.s >= 2).length });
 }
-export { LISTS };
+export { LISTS, SCHOOL };
