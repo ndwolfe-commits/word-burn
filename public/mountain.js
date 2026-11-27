@@ -36,6 +36,12 @@ export function walkPlan(from, to, summit = SUMMIT, camps = CAMPS) {
   if (to <= from) return { start: to, end: to, camps: [], summit: false };
   return { start: from, end: to, camps: camps.filter(c => c.n > from && c.n <= to), summit: to === summit };
 }
+// What he is climbing towards from step n, and how many steps are left to it. Nothing once he is at the top.
+export function nextStop(n, summit = SUMMIT, camps = CAMPS) {
+  if (n >= summit) return null;
+  const c = camps.find(x => x.n > n);
+  return c ? { name: c.name, left: c.n - n } : { name: "the top", left: summit - n };
+}
 // The stones that carry a word to pick up: the next few ahead of the climber.
 export function gemSteps(at, count, summit = SUMMIT) { const out = []; for (let s = at + 1; s <= summit && out.length < Math.min(count, 8); s++) out.push(s); return out; }
 

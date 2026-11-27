@@ -1,6 +1,6 @@
 // The mountain: the path, the camps and the walk. These check the picture's sums, not how it looks on a phone.
 import test from "node:test"; import assert from "node:assert/strict";
-import { SUMMIT, CAMPS, W, trail, walkPlan, gemSteps, scene } from "../public/mountain.js";
+import { SUMMIT, CAMPS, W, trail, walkPlan, gemSteps, nextStop, scene } from "../public/mountain.js";
 import { ALLKEYS, LISTS, SCHOOL } from "../public/engine.js";
 
 test("the summit is one step for every word, and the school sheet is counted apart", () => {
@@ -53,4 +53,12 @@ test("the drawing has every stone, lights the ones climbed, and lights only the 
   assert.equal((svg.match(/class="gem"/g) || []).length, 3);
   assert.ok(svg.includes("Summit · 707") && svg.includes("Camp 6 · 557"));
   assert.ok(!/NaN|undefined/.test(svg));
+});
+test("the small map counts down to the next camp, then to the top", () => {
+  assert.deepEqual(nextStop(0), { name: "Camp 1", left: 100 });
+  assert.deepEqual(nextStop(99), { name: "Camp 1", left: 1 });
+  assert.deepEqual(nextStop(100), { name: "Camp 2", left: 100 });      // standing at a camp: the next one is the target
+  assert.deepEqual(nextStop(557), { name: "the top", left: 150 });
+  assert.deepEqual(nextStop(706), { name: "the top", left: 1 });
+  assert.equal(nextStop(707), null);
 });

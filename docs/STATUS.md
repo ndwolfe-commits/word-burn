@@ -3,8 +3,8 @@
 Read this first in a new session. It records what is built, what was decided and why, and what comes next.
 
 ## Live
-- Web game v15 at https://ndwolfe-commits.github.io/word-burn/ (branch `gh-pages`, built from `main` by `scripts/build.mjs`; publish steps are in the README).
-- 40 tests (`npm test`). A phone-like voice test lives outside the repo and should be rebuilt as a proper test.
+- Web game v16 at https://ndwolfe-commits.github.io/word-burn/ (branch `gh-pages`, built from `main` by `scripts/build.mjs`; publish steps are in the README).
+- 41 tests (`npm test`). A phone-like voice test lives outside the repo and should be rebuilt as a proper test.
 
 ## The words
 - `scripts/make-words.py` builds `public/words.js` from `data/school-lists.json` (the school's sheet: Letters and Sounds high-frequency words plus the national curriculum spelling lists) and the 200 commonest English words the sheet leaves out.
@@ -23,9 +23,14 @@ Read this first in a new session. It records what is built, what was decided and
 - The first screen. One step for every burned word, 707 to the summit; a camp where each set ends (100, 200, 300, 400, 500, 557). It reads the engine's counts and changes no rule.
 - After a round the climber walks from where he was to where he is, lighting stones and stopping to cheer at a camp. He never walks down: if words were forgotten he simply stands lower next time.
 - Words in practice show as gems on the stones ahead ("words to pick up"); ones burned in the round are collected as he passes.
-- Two numbers: steps of 707, and the school sheet of 507.
+- Two numbers: steps of 707, and the school sheet of 507. The small map in the corner fills up the whole mountain and counts down the steps to the next camp (added in v16: a round was too small to see on the map alone).
 - `public/mountain.js` holds the path, camps and drawing; `game.js` puts it on screen. The climber is a stand-in drawn by one function, `climber()`: the child chooses the real one.
 - Checked in a phone-sized Chrome on a computer (new player, part way, summit, small screen, a tapped round crossing a camp). Not yet seen on a real iPhone, and the walk has not been seen after a voice round.
+
+## First round on a real iPhone (v15, Safari, an adult reading)
+- The mountain and the walk worked. All 20 words were heard right first time, but the reader had to be close to the phone and speak clearly; the loudest levels in the record were low (0.010 to 0.025).
+- Not yet known whether the weak link is the phone's dictation or the game's own voice-start line. Nothing in the listening code was changed. The iPhone app listens differently (it tells the recogniser which word to expect), so judge it there first.
+- Wispr Flow was looked at as a replacement: its API is by approval only and runs on their servers, which breaks "the voice never leaves the phone". Not pursued.
 
 ## The iPhone app
 - `ios/` is a thin shell: a web view showing the same game, with listening and speaking done natively (`ios/App/Ears.swift`). The page talks to it through `window.webkit.messageHandlers.ears` and `window.__ears`.
