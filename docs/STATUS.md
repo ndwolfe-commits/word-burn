@@ -54,7 +54,12 @@ Read this first in a new session. It records what is built, what was decided and
 - `ios/` is a thin shell: a web view showing the same game, with listening and speaking done natively (`ios/App/Ears.swift`). The page talks to it through `window.webkit.messageHandlers.ears` and `window.__ears`.
 - It compiles on GitHub's Macs (`.github/workflows/ios.yml`). It has never run on a phone.
 - Bundle ID agreed: `net.nathanwolfe.wordburn`.
-- Blocked on: the Apple Developer membership going from Pending to active, then an App Store Connect API key (Admin role) added as GitHub secrets by the owner, never pasted into a chat. After that: signing, TestFlight upload, first real round.
+- The owner reported on 27 Nov 2026 (evening) that the Apple Developer membership is active. Not checked from here.
+- Ready and waiting, never yet run: `.github/workflows/testflight.yml` (tests, build, sign, upload to TestFlight; started from the Actions page or by pushing a tag starting `ios-`) and `scripts/asc.py` (registers the bundle ID, finds the team ID, checks the app exists). There is a stand-in app icon (the mountain).
+- Still needed from the owner, in this order:
+  1. An App Store Connect API key with the Admin role, added as three GitHub secrets: `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8`. Never pasted into a chat.
+  2. After the first run has registered the bundle ID: create the app in App Store Connect (New App, iOS, bundle ID `net.nathanwolfe.wordburn`). Apple does not let a key do this. The name must be unique on the App Store, so "Word Burn" may need a longer form.
+- Then: run the workflow again, install from TestFlight, first real round.
 
 ## Agreed, not started
 1. The child picks the climber for the mountain.

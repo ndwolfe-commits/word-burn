@@ -18,7 +18,7 @@ targets:
       properties:
         CFBundleDisplayName: Word Burn
         CFBundleShortVersionString: "0.1"
-        CFBundleVersion: "1"
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         NSMicrophoneUsageDescription: Word Burn listens for the word being read aloud and times how quickly it is said.
@@ -27,5 +27,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: net.nathanwolfe.wordburn
+        CURRENT_PROJECT_VERSION: "1"                 # the TestFlight workflow passes a new number for every upload
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1"

@@ -1,0 +1,67 @@
+# Builds the iPhone app, signs it and sends it to TestFlight.
+# Runs only when asked: from the Actions page (Run workflow), or when a tag starting "ios-" is pushed.
+# Needs three repository secrets, added by the owner in GitHub's settings and never written anywhere else:
+#   ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8 (an App Store Connect API key with the Admin role)
+name: TestFlight
+on:
+  workflow_dispatch:
+  push:
+    tags: ["ios-*"]
+jobs:
+  upload:
+    runs-on: macos-15
+    env:
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+      BUNDLE: net.nathanwolfe.wordburn
+    steps:
+      - name: Check the Apple key is in the repository's secrets
+        run: |
+          for n in ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8; do
+            if [ -z "${!n}" ]; then echo "::error::The secret $n is missing. Add it in the repository's Settings, Secrets and variables, Actions."; exit 1; fi
+          done
+      - uses: actions/checkout@v4
+      - name: Run the tests
+        run: npm test
+      - name: Build the game and copy it into the app
+        run: node scripts/build.mjs && cp -R dist ios/web
+      - name: Ask App Store Connect for the team and the app
+        id: asc
+        run: |
+          set -o pipefail
+          python3 -m pip install --quiet --user --break-system-packages pyjwt cryptography
+          team=$(python3 scripts/asc.py "$BUNDLE" "Word Burn" | tail -1)
+          echo "team=$team" >> "$GITHUB_OUTPUT"
+      - name: Put the key where Xcode can read it
+        run: |
+          mkdir -p "$RUNNER_TEMP/keys" && printf '%s' "$ASC_KEY_P8" > "$RUNNER_TEMP/keys/AuthKey_$ASC_KEY_ID.p8"
+      - name: Generate the Xcode project
+        run: brew install xcodegen && cd ios && xcodegen generate
+      - name: Build and sign
+        run: |
+          set -o pipefail
+          cd ios && xcodebuild -project WordBurn.xcodeproj -scheme WordBurn -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/WordBurn.xcarchive" archive \
+            CODE_SIGN_STYLE=Automatic DEVELOPMENT_TEAM=${{ steps.asc.outputs.team }} CURRENT_PROJECT_VERSION=${{ github.run_number }} \
+            -allowProvisioningUpdates -authenticationKeyPath "$RUNNER_TEMP/keys/AuthKey_$ASC_KEY_ID.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" | tail -60
+      - name: Send to TestFlight
+        run: |
+          set -o pipefail
+          cat > "$RUNNER_TEMP/export.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>teamID</key><string>${{ steps.asc.outputs.team }}</string>
+            <key>signingStyle</key><string>automatic</string>
+          </dict></plist>
+          PLIST
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/WordBurn.xcarchive" -exportOptionsPlist "$RUNNER_TEMP/export.plist" \
+            -exportPath "$RUNNER_TEMP/export" -allowProvisioningUpdates -authenticationKeyPath "$RUNNER_TEMP/keys/AuthKey_$ASC_KEY_ID.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" | tail -40
+      - name: Remove the key from the build machine
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/keys"
