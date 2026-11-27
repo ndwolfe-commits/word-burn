@@ -1,5 +1,5 @@
 // Word Burn engine: which word comes next, and what a reading does to it. No screen or microphone code here.
-import { LISTS, ALT, SCHOOL } from "./words.d75c93b7.js";
+import { LISTS, ALT, SCHOOL } from "./words.6cf09c01.js";
 
 export const ALLKEYS = [];
 { const seen = new Set(); for (const l of LISTS) for (const w of l.words) if (!seen.has(w)) { seen.add(w); ALLKEYS.push(w); } }
@@ -53,18 +53,23 @@ export function instantMs(S) {
 
 // --- grading: out is "fast" (right and instant), "slow" (right after a pause) or "miss" ---
 export const band = (S, k) => { const w = S.w[k]; return !w ? "un" : w.s === 1 ? "side" : w.s < 4 ? "burned" : "locked"; };
-export function grade(S, key, out, rt, today = day()) {
+// soft: the phone heard something only close to the word. Such a read still counts, but on a shorter leash: the word comes back
+// the next day, and it is not locked until the phone has heard it properly (w.q marks a word still in question).
+export function grade(S, key, out, rt, today = day(), soft = false) {
   let w = S.w[key]; const first = !w;
   if (!w) w = S.w[key] = { s: 1, d: 0, r: 0, n: 0, m: 0, b: 0 };
   const before = first ? 0 : w.s; w.n++;
   if (out === "miss") w.m++; else if (rt > 0) { rt = Math.round(rt); if (!w.b || rt < w.b) w.b = rt; }
-  if (first) { if (out === "fast") { w.s = 3; w.k = 1; w.d = today + 7; } }        // known already: one check in a week
-  else if (w.s === 1) { if (out === "fast") { if (++w.r >= 3) { w.s = 2; w.r = 0; w.d = today + IV[2]; } } else if (out === "miss") w.r = 0; }
-  else if (out === "miss") { w.s = 1; w.r = 0; delete w.k; }                       // forgotten: back to the side
+  if (first) { if (out === "fast") { w.s = 3; w.k = 1; w.d = today + (soft ? 1 : 7); if (soft) w.q = 1; } }   // known already: one check in a week
+  else if (w.s === 1) { if (out === "fast") { if (++w.r >= 3) { w.s = 2; w.r = 0; w.d = today + IV[2]; if (soft) w.q = 1; } } else if (out === "miss") w.r = 0; }
+  else if (out === "miss") { w.s = 1; w.r = 0; delete w.k; delete w.q; }           // forgotten: back to the side
   else if (w.d <= today) {
-    if (out === "fast") w.s = w.k ? 6 : Math.min(7, w.s + 1);                      // a word known from the start needs only that one check
-    else { w.s = Math.max(2, w.s - 1); delete w.k; }
-    w.d = today + (out === "fast" ? IV[w.s] : 1);
+    if (out === "fast" && (soft || w.q)) { if (soft) { w.q = 1; w.d = today + 3; } else { delete w.q; w.d = today + 7; } }   // in question: no step up yet; heard properly, it gets its week
+    else {
+      if (out === "fast") w.s = w.k ? 6 : Math.min(7, w.s + 1);                    // a word known from the start needs only that one check
+      else { w.s = Math.max(2, w.s - 1); delete w.k; }
+      w.d = today + (out === "fast" ? IV[w.s] : 1);
+    }
   }
   if (out !== "miss" && rt > 0 && rt <= 2500 && (first ? out === "fast" : before >= 2)) { S.rt.push(rt); if (S.rt.length > 20) S.rt.shift(); }
   return { before, after: w.s, burnedNow: before < 2 && w.s >= 2 };
@@ -131,8 +136,8 @@ export function pick(S, R, today = day(), rand = Math.random) {
   return null;
 }
 // Record a reading: grade it, move the frontier if it was a probe, advance the round.
-export function apply(S, R, card, out, rt, today = day()) {
-  const g = grade(S, card.key, out, rt, today), rank = RANK.get(card.key);
+export function apply(S, R, card, out, rt, today = day(), soft = false) {
+  const g = grade(S, card.key, out, rt, today, soft), rank = RANK.get(card.key);
   if (card.kind === "probe") {                                       // search for the reader's edge: leap further after each hit, halve the leap after a stumble
     const step = S.step || 40;
     if (out === "fast") { S.level = Math.min(ALLKEYS.length, rank + step); S.step = Math.min(160, step * 2); }
@@ -168,7 +173,7 @@ export function mergeState(a, b) {
 export function cleanState(x) {
   if (!x || typeof x !== "object" || typeof x.w !== "object" || !x.w) return null;
   const w = {}; let n = 0;
-  for (const k of Object.keys(x.w)) { if (!RANK.has(k) || ++n > 900) continue; const v = x.w[k]; if (!v || typeof v !== "object") continue; const o = { s: Math.max(1, Math.min(7, v.s | 0)), d: v.d | 0, r: v.r | 0, n: v.n | 0, m: v.m | 0, b: v.b | 0 }; if (v.k) o.k = 1; w[k] = o; }
+  for (const k of Object.keys(x.w)) { if (!RANK.has(k) || ++n > 900) continue; const v = x.w[k]; if (!v || typeof v !== "object") continue; const o = { s: Math.max(1, Math.min(7, v.s | 0)), d: v.d | 0, r: v.r | 0, n: v.n | 0, m: v.m | 0, b: v.b | 0 }; if (v.k) o.k = 1; if (v.q) o.q = 1; w[k] = o; }
   const num = (v, d) => (Number.isFinite(v) ? v : d), str = v => String(v == null ? "" : v).slice(0, 40);
   if ((x.lv | 0) < 2) x = Object.assign({}, x, { level: 30, step: 40, found: 0 });   // the words were reordered: look for the reader's edge afresh
   const al = {}; if (x.al && typeof x.al === "object") for (const k of Object.keys(x.al)) { if (!RANK.has(k) || !x.al[k] || typeof x.al[k] !== "object") continue; for (const t of Object.keys(x.al[k]).slice(0, 6)) if (/^[a-z0-9]{1,24}$/.test(t)) (al[k] || (al[k] = {}))[t] = Math.max(0, Math.min(99, x.al[k][t] | 0)); }
