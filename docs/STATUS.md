@@ -3,8 +3,8 @@
 Read this first in a new session. It records what is built, what was decided and why, and what comes next.
 
 ## Live
-- Web game v19 at https://ndwolfe-commits.github.io/word-burn/ (branch `gh-pages`, built from `main` by `scripts/build.mjs`; publish steps are in the README).
-- 41 tests (`npm test`). A phone-like voice test lives outside the repo and should be rebuilt as a proper test.
+- Web game v20 at https://ndwolfe-commits.github.io/word-burn/ (branch `gh-pages`, built from `main` by `scripts/build.mjs`; publish steps are in the README).
+- 48 tests (`npm test`). A phone-like voice test lives outside the repo and should be rebuilt as a proper test.
 
 ## The words
 - `scripts/make-words.py` builds `public/words.js` from `data/school-lists.json` (the school's sheet: Letters and Sounds high-frequency words plus the national curriculum spelling lists) and the 200 commonest English words the sheet leaves out.
@@ -44,6 +44,11 @@ Read this first in a new session. It records what is built, what was decided and
 - After a miss the game goes on to "Your turn" by itself once the phone has said the word; if the phone will not listen again without a tap, the "Now you say it" button comes back.
 - The spoken voice: uses a Premium or Enhanced British voice if the phone offers one, else the phone's default as before. The real fix would be recorded words; not started.
 - An adult's practice pile was swollen by the v17 all-slow round, which is why words seemed to repeat quickly.
+
+## Fixed in v20: "never fast enough" in a noisy room
+- Real round on v19: the room was about ten times louder than in earlier rounds (0.0013 to 0.0034 against 0.0001 to 0.0003) with the voice as loud as before (about 0.02). The live voice-start rule needs sound 12 times the room, so it never fired and 17 of 20 right reads counted as slow.
+- Now, when words arrive and there was no live start, the start is worked out by looking back through the word's sound levels (`public/hearing.js`, tested with those numbers). The live rule is unchanged. Recreated in a test browser with a noisy sound file: v19 timed 0 of 20, v20 timed 20 of 20.
+- The v19 change of opening the microphone 0.7 s after dictation held up in that round: the first word was heard first time. One round only.
 
 ## The iPhone app
 - `ios/` is a thin shell: a web view showing the same game, with listening and speaking done natively (`ios/App/Ears.swift`). The page talks to it through `window.webkit.messageHandlers.ears` and `window.__ears`.

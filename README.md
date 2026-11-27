@@ -7,6 +7,7 @@ It runs as a web page that is added to the phone's home screen. The microphone t
 ## What is here
 
 - `public/index.html`, `public/game.js`: the game's screen, voice and fireworks.
+- `public/hearing.js`: sums about sound that need no microphone, such as working out when a voice began.
 - `public/mountain.js`: the mountain progress screen. The path, the camps and the drawing. No rules.
 - `public/engine.js`: the rules. Which word comes next, what a reading does to it, what counts as instant.
 - `public/words.js`: the word sets, easiest first, and same-sounding spellings.
