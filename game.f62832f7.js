@@ -1,8 +1,8 @@
 // Word Burn: the screen, the voice and the fireworks. The rules of the game live in engine.js.
-import { LISTS, ALLKEYS, ROUND, fresh, matches, instantMs, pick, apply, newRound, counts, band, mergeState, cleanState } from "./engine.42b3e20b.js";
+import { LISTS, ALLKEYS, ROUND, fresh, matches, instantMs, pick, apply, newRound, counts, band, mergeState, cleanState } from "./engine.f62832f7.js";
 
-const BUILD = "42b3e20b";
-const SHORT = "v6";
+const BUILD = "f62832f7";
+const SHORT = "v7";
 const VERSION = "game " + SHORT + " (" + BUILD + ")";
 const OLDKEY = "wb.game.v1", SETKEY = "wb.settings.v1", DEVKEY = "wb.device.v2", stateKey = id => "wb.state." + id;
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
