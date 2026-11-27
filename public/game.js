@@ -2,7 +2,7 @@
 import { LISTS, SCHOOL, ALLKEYS, ROUND, fresh, matches, hears, learn, instantMs, pick, apply, newRound, counts, band, mergeState, cleanState } from "./engine.js";
 
 const BUILD = "dev";
-const SHORT = "v13";
+const SHORT = "v14";
 const VERSION = "game " + SHORT + " (" + BUILD + ")";
 const OLDKEY = "wb.game.v1", SETKEY = "wb.settings.v1", DEVKEY = "wb.device.v2", stateKey = id => "wb.state." + id;
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -283,24 +283,25 @@ async function playCard(card) {
   const t0 = performance.now(), limit = instantMs(S);
   dbg("SHOW " + card.key, { kind: card.kind, instant: limit, room: +floor.toFixed(4) });
   drawFoot("go");
-  let out, rt = 0, heard = "";
+  let out, rt = 0, heard = "", soft = false;
   if (T.voice) {
     const r = await listen(card.key, t0, floor); if (!R || T.stop) return;
     if (r.unheard) {
       if (!T.retried[card.key]) { T.retried[card.key] = 1; setSay("", "Didn’t catch that", "Say it again."); await wait(900); return playCard(card); }
       out = "miss";
-    } else { heard = r.heard || ""; rt = r.onset || 0; out = !r.right ? "miss" : r.onset != null && r.onset <= limit ? "fast" : "slow"; }
+    } else { soft = r.how === "close"; heard = r.heard || ""; rt = r.onset || 0; out = !r.right ? "miss" : r.onset != null && r.onset <= limit ? "fast" : "slow"; }
   } else {
     const tap = await new Promise(res => { T.tap = res; }); if (!R || T.stop) return;
     rt = Math.max(150, performance.now() - t0 - 300); out = tap === "no" ? "miss" : rt <= limit ? "fast" : "slow";
   }
-  await settle(card, out, rt, heard);
+  await settle(card, out, rt, heard, soft);
 }
-async function settle(card, out, rt, heard) {
+async function settle(card, out, rt, heard, soft) {
   const wordEl = document.getElementById("word"), cardEl = document.getElementById("card");
   T.tap = null; drawFoot("wait");                                    // answer buttons go as soon as one is used
-  const limit = instantMs(S), g = apply(S, R, card, out, rt);
-  dbg("OUTCOME " + card.key, { out, ms: Math.round(rt), heard }); saveDbg();
+  const limit = instantMs(S), g = apply(S, R, card, out, rt, undefined, !!soft);
+  if (soft && heard) learn(S, card.key, heard);                       // the same near miss heard again later becomes this reader's own way of saying it
+  dbg("OUTCOME " + card.key, { out, ms: Math.round(rt), heard, soft: !!soft }); saveDbg();
   T.outs.push(out); drawDots();
   if (out === "miss") { T.combo = 0; if (heard) { S.log.push({ t: Date.now(), k: card.key, heard: String(heard).slice(0, 40) }); S.log = S.log.slice(-30); } }
   else { if (out === "fast") { T.combo++; if (rt && (!T.fastest || rt < T.fastest.rt)) T.fastest = { key: card.key, rt }; } else T.combo = 0; T.maxCombo = Math.max(T.maxCombo, T.combo); }

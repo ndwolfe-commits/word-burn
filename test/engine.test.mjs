@@ -165,3 +165,12 @@ test("a reader's own way of saying a word is learned from saying it back twice, 
   assert.equal(hears(mergeState(fresh(), c), "wed", "red"), "own");
   assert.deepEqual(cleanState({ w: {}, al: { red: { "<b>": 5 }, nope: { x: 3 } } }).al, {});
 });
+test("a word waved through on a near miss is on a shorter leash until the phone hears it properly", () => {
+  const S = fresh();
+  grade(S, "rabbit", "fast", 600, 100, true); assert.equal(S.w.rabbit.d, 101, "back the next day, not in a week"); assert.equal(S.w.rabbit.q, 1);
+  grade(S, "rabbit", "fast", 600, 101, true); assert.equal(S.w.rabbit.s, 3, "a second near miss does not move it up"); assert.equal(S.w.rabbit.d, 104);
+  grade(S, "rabbit", "fast", 600, 104, false); assert.equal(S.w.rabbit.q, undefined); assert.equal(S.w.rabbit.s, 3); assert.equal(S.w.rabbit.d, 111, "heard properly: now its week");
+  grade(S, "rabbit", "fast", 600, 111, false); assert.equal(S.w.rabbit.s, 6, "and then it is locked");
+  grade(S, "friend", "fast", 600, 100, false); assert.equal(S.w.friend.d, 107); grade(S, "friend", "fast", 600, 107, false); assert.equal(S.w.friend.s, 6, "a properly heard word is unchanged: one check, then locked");
+  assert.equal(cleanState(Object.assign(S, { lv: 2 })).w.rabbit.q, undefined); grade(S, "garden", "fast", 600, 100, true); assert.equal(cleanState(S).w.garden.q, 1);
+});
