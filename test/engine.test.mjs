@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { ALLKEYS, RANK, fresh, grade, pick, apply, newRound, matches, instantMs, counts, IV, ROUND, mergeState, cleanState, mood, alike } from "../public/engine.js";
+import { ALLKEYS, RANK, fresh, grade, pick, apply, newRound, matches, instantMs, counts, IV, ROUND, mergeState, cleanState, mood, alike, hears, learn } from "../public/engine.js";
 
 test("the word sets load, with duplicates removed", () => { assert.equal(ALLKEYS.length, 707); assert.equal(RANK.get("the"), 0); });
 
@@ -147,4 +147,21 @@ test("a new word is held back while its look-alike is still being practised", ()
   const seen = [];
   for (let r = 0; r < 4; r++) { const R = newRound(); for (let i = 0; i < ROUND; i++) { const card = pick(S, R, 300, () => 0.5); if (card.kind !== "side") seen.push(card.key); apply(S, R, card, card.key === "through" ? "miss" : "fast", 600, 300); } }
   assert.ok(!seen.includes("though") && !seen.includes("thought"), "shown while 'through' was in practice: " + seen.filter(k => alike(k, "through")).join(" "));
+});
+test("a near miss by the phone gets the benefit of the doubt, but a different word from the list never does", () => {
+  const S = fresh();
+  assert.equal(hears(S, "Said", "said"), "exact");
+  assert.equal(hears(S, "Wabbit", "rabbit"), "close"); assert.equal(hears(S, "fwend", "friend"), "close"); assert.equal(hears(S, "Togever", "together"), "close");
+  assert.equal(hears(S, "than", "then"), "", "then/than is a real confusion"); assert.equal(hears(S, "saw", "was"), ""); assert.equal(hears(S, "though", "through"), "");
+  assert.equal(hears(S, "tie", "the"), "", "no slack on the very short words"); assert.equal(hears(S, "banana", "said"), "");
+});
+test("a reader's own way of saying a word is learned from saying it back twice, and travels between phones", () => {
+  const S = fresh();
+  assert.equal(hears(S, "wed", "red"), "");
+  learn(S, "red", "Wed"); assert.equal(hears(S, "wed", "red"), "", "once is not enough");
+  learn(S, "red", "wed"); assert.equal(hears(S, "Wed", "red"), "own");
+  learn(S, "was", "saw"); learn(S, "was", "saw"); assert.equal(hears(S, "saw", "was"), "", "a different list word is never learned");
+  const c = cleanState(JSON.parse(JSON.stringify(Object.assign(S, { lv: 2 })))); assert.equal(hears(c, "wed", "red"), "own");
+  assert.equal(hears(mergeState(fresh(), c), "wed", "red"), "own");
+  assert.deepEqual(cleanState({ w: {}, al: { red: { "<b>": 5 }, nope: { x: 3 } } }).al, {});
 });

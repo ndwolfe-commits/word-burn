@@ -1,8 +1,8 @@
 // Word Burn: the screen, the voice and the fireworks. The rules of the game live in engine.js.
-import { LISTS, SCHOOL, ALLKEYS, ROUND, fresh, matches, instantMs, pick, apply, newRound, counts, band, mergeState, cleanState } from "./engine.js";
+import { LISTS, SCHOOL, ALLKEYS, ROUND, fresh, matches, hears, learn, instantMs, pick, apply, newRound, counts, band, mergeState, cleanState } from "./engine.js";
 
 const BUILD = "dev";
-const SHORT = "v12";
+const SHORT = "v13";
 const VERSION = "game " + SHORT + " (" + BUILD + ")";
 const OLDKEY = "wb.game.v1", SETKEY = "wb.settings.v1", DEVKEY = "wb.device.v2", stateKey = id => "wb.state." + id;
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -235,8 +235,8 @@ function listen(key, t0, floor, limitMs = 6000) {
     // Dictation keeps settling earlier words after the game has moved on, sometimes rewriting them into one phrase.
     // So a text counts for this word only if it names the word, or arrives after this word's voice has started.
     ears.onText = (texts, final) => {
-      const now = performance.now(), named = texts.some(t => matches(t, key));
-      if (named && now - t0 > 250) { heard = texts[0]; show1(heard); return end({ right: true, onset, heard }); }
+      const now = performance.now(), how = texts.map(t => hears(S, t, key)).find(Boolean), named = !!how;
+      if (named && now - t0 > 250) { heard = texts[0]; show1(heard); return end({ right: true, onset, heard, how }); }
       if (onset == null || now < t0 + onset + 200) { dbg("that text came before this word was spoken; ignored"); return; }
       heard = texts[0]; show1(heard);
       if (final) { clearTimeout(wrongTimer); wrongTimer = setTimeout(() => end({ right: false, onset, heard }), 1200); }   // time for the right word to follow
@@ -323,6 +323,7 @@ async function settle(card, out, rt, heard) {
       const r = await listen(card.key, performance.now(), floor, 5000); if (!R || T.stop) return;
       dbg("said back " + card.key, { right: !!r.right, heard: r.heard || "" }); saveDbg();
       if (r.right) { sfx.slow(); setSay("slow", "That’s it!", ""); await wait(600); }
+      else if (r.heard) { learn(S, card.key, r.heard); save(); }           // heard something else twice for this word: that is how this reader says it
     };
     if (NATIVE && T.voice) { await spoke; await wait(150); await echo(); }
     else {

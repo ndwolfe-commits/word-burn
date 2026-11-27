@@ -4,6 +4,7 @@ import { LISTS, ALT, SCHOOL } from "./words.js";
 export const ALLKEYS = [];
 { const seen = new Set(); for (const l of LISTS) for (const w of l.words) if (!seen.has(w)) { seen.add(w); ALLKEYS.push(w); } }
 export const RANK = new Map(ALLKEYS.map((k, i) => [k, i]));
+const RANK_LOW = new Set(ALLKEYS.map(k => k.toLowerCase().replace(/[’']/g, "")));
 
 export const IV = [0, 0, 1, 3, 7, 16, 35, 90];   // days until the next check, by stage
 export const CAP = 6;                            // words in practice before harder probes stop
@@ -13,7 +14,7 @@ export const SPRINT = 5;                           // cards at the end of a roun
 export const MAX_CHECKS = 5;                      // checks of burned words per round, so new words keep flowing
 
 // lv is the version of the word order that `level` counts along; an older order's level is started again.
-export const fresh = () => ({ v: 1, lv: 2, gen: 0, updated: 0, w: {}, level: 30, step: 40, found: 0, rt: [], burned: 0, streak: { d: "", n: 0 }, best: { combo: 0 }, rounds: [], log: [] });
+export const fresh = () => ({ v: 1, lv: 2, gen: 0, updated: 0, w: {}, al: {}, level: 30, step: 40, found: 0, rt: [], burned: 0, streak: { d: "", n: 0 }, best: { combo: 0 }, rounds: [], log: [] });
 export const day = (d = new Date()) => Math.floor((d.getTime() - d.getTimezoneOffset() * 6e4) / 864e5);
 
 // --- matching what was heard against the word shown ---
@@ -22,6 +23,25 @@ export function matches(heard, key) {
   const toks = tokens(heard), ok = new Set([tokens(key).join(""), ...(ALT[key.toLowerCase()] || "").split(" ").filter(Boolean)]);
   for (let i = 0; i < toks.length; i++) { if (ok.has(toks[i])) return true; if (i + 1 < toks.length && ok.has(toks[i] + toks[i + 1])) return true; }
   return false;
+}
+
+// --- hearing a particular reader: benefit of the doubt, and learning how this reader says a word ---
+const lev = (a, b) => { const d = Array.from({ length: b.length + 1 }, (_, j) => j); for (let i = 1; i <= a.length; i++) { let p = d[0]; d[0] = i; for (let j = 1; j <= b.length; j++) { const q = d[j]; d[j] = Math.min(d[j] + 1, d[j - 1] + 1, p + (a[i - 1] === b[j - 1] ? 0 : 1)); p = q; } } return d[b.length]; };
+const slack = n => (n <= 3 ? 0 : n <= 5 ? 1 : n <= 8 ? 2 : 3);       // letters that may differ; none for the very short words, where one letter makes another word
+const other = (t, key) => t !== key && RANK_LOW.has(t);              // the heard word is a different word from the list: a real confusion, never forgiven
+// How a heard text names the word shown: "exact", "own" (this reader's learned way of saying it), "close" (benefit of the doubt), or "".
+export function hears(S, heard, key) {
+  if (matches(heard, key)) return "exact";
+  const k = tokens(key).join(""), mine = (S && S.al && S.al[key]) || {};
+  for (const t of tokens(heard)) { if (other(t, k)) continue; if ((mine[t] | 0) >= 2) return "own"; }
+  for (const t of tokens(heard)) { if (other(t, k)) continue; if (slack(k.length) && lev(t, k) <= slack(k.length)) return "close"; }
+  return "";
+}
+// After a miss the reader repeats the word just spoken to them. What the phone hears then is very likely this reader's way of saying it:
+// heard twice, it is accepted for this reader from then on.
+export function learn(S, key, heard) {
+  const k = tokens(key).join(""); if (!S.al) S.al = {};
+  for (const t of tokens(heard).slice(0, 3)) { if (t === k || other(t, k) || t.length > 24) continue; const m = S.al[key] || (S.al[key] = {}); if (Object.keys(m).length < 6 || t in m) m[t] = Math.min(99, (m[t] | 0) + 1); }
 }
 
 // --- what counts as instant for this reader ---
@@ -138,7 +158,8 @@ export function mergeState(a, b) {
   const hi = (a.updated | 0) >= (b.updated | 0) ? a : b, lo = hi === a ? b : a, w = {};
   for (const k of [...new Set([...Object.keys(a.w || {}), ...Object.keys(b.w || {})])].sort()) { const x = hi.w[k], y = lo.w[k]; w[k] = !y ? x : !x ? y : (y.n > x.n ? y : x); }
   const byT = list => { const m = new Map(); for (const r of list) if (r && r.t) m.set(r.t, r); return [...m.values()].sort((p, q) => p.t - q.t); };
-  const out = Object.assign(fresh(), { gen: hi.gen | 0, updated: Math.max(a.updated | 0, b.updated | 0), w, level: hi.level, step: hi.step || 40, found: hi.found ? 1 : 0, rt: (hi.rt || []).slice(-20), streak: hi.streak || { d: "", n: 0 },
+  const al = {}; for (const src of [lo.al || {}, hi.al || {}]) for (const k of Object.keys(src)) for (const t of Object.keys(src[k] || {})) { (al[k] || (al[k] = {}))[t] = Math.max((al[k] && al[k][t]) | 0, src[k][t] | 0); }
+  const out = Object.assign(fresh(), { al, gen: hi.gen | 0, updated: Math.max(a.updated | 0, b.updated | 0), w, level: hi.level, step: hi.step || 40, found: hi.found ? 1 : 0, rt: (hi.rt || []).slice(-20), streak: hi.streak || { d: "", n: 0 },
     best: { combo: Math.max((a.best && a.best.combo) || 0, (b.best && b.best.combo) || 0) }, rounds: byT([...(lo.rounds || []), ...(hi.rounds || [])]).slice(-60), log: byT([...(lo.log || []), ...(hi.log || [])]).slice(-30) });
   out.burned = Object.values(w).filter(x => x.s >= 2).length;
   return out;
@@ -150,7 +171,8 @@ export function cleanState(x) {
   for (const k of Object.keys(x.w)) { if (!RANK.has(k) || ++n > 900) continue; const v = x.w[k]; if (!v || typeof v !== "object") continue; const o = { s: Math.max(1, Math.min(7, v.s | 0)), d: v.d | 0, r: v.r | 0, n: v.n | 0, m: v.m | 0, b: v.b | 0 }; if (v.k) o.k = 1; w[k] = o; }
   const num = (v, d) => (Number.isFinite(v) ? v : d), str = v => String(v == null ? "" : v).slice(0, 40);
   if ((x.lv | 0) < 2) x = Object.assign({}, x, { level: 30, step: 40, found: 0 });   // the words were reordered: look for the reader's edge afresh
-  return Object.assign(fresh(), { gen: x.gen | 0, updated: num(x.updated, 0), w, level: Math.max(0, Math.min(ALLKEYS.length, x.level | 0)), step: Math.max(10, Math.min(160, (x.step | 0) || 40)), found: x.found ? 1 : 0, rt: (Array.isArray(x.rt) ? x.rt : []).filter(Number.isFinite).slice(-20),
+  const al = {}; if (x.al && typeof x.al === "object") for (const k of Object.keys(x.al)) { if (!RANK.has(k) || !x.al[k] || typeof x.al[k] !== "object") continue; for (const t of Object.keys(x.al[k]).slice(0, 6)) if (/^[a-z0-9]{1,24}$/.test(t)) (al[k] || (al[k] = {}))[t] = Math.max(0, Math.min(99, x.al[k][t] | 0)); }
+  return Object.assign(fresh(), { al, gen: x.gen | 0, updated: num(x.updated, 0), w, level: Math.max(0, Math.min(ALLKEYS.length, x.level | 0)), step: Math.max(10, Math.min(160, (x.step | 0) || 40)), found: x.found ? 1 : 0, rt: (Array.isArray(x.rt) ? x.rt : []).filter(Number.isFinite).slice(-20),
     streak: { d: str(x.streak && x.streak.d), n: (x.streak && x.streak.n) | 0 }, best: { combo: (x.best && x.best.combo) | 0 },
     rounds: (Array.isArray(x.rounds) ? x.rounds : []).filter(r => r && Number.isFinite(r.t)).slice(-60).map(r => ({ t: r.t, n: r.n | 0, fast: r.fast | 0, miss: r.miss | 0, voice: r.voice ? 1 : 0 })),
     log: (Array.isArray(x.log) ? x.log : []).filter(r => r && Number.isFinite(r.t)).slice(-30).map(r => ({ t: r.t, k: str(r.k), heard: str(r.heard) })),
