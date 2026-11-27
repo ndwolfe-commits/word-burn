@@ -52,6 +52,41 @@ input[type=text]{flex:1;min-width:0;font:inherit;font-size:18px;padding:12px 14p
 .ver{position:absolute;bottom:calc(8px + env(safe-area-inset-bottom));left:0;right:0;text-align:center;font-size:12px;color:var(--muted);opacity:.7}
 .corner{position:absolute;top:calc(14px + env(safe-area-inset-top));right:16px}
 
+/* the mountain */
+.mtn{gap:10px}
+.brand{font-weight:900;font-size:17px;text-transform:uppercase;letter-spacing:1px;white-space:nowrap} .brand b{color:var(--fire)}
+.mtn .name{font-size:18px;padding:6px 12px;max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mtn-wrap{position:relative;flex:1;min-height:120px;display:flex;border-radius:22px;overflow:hidden;border:2px solid var(--line)}
+.mtn-scroll{flex:1;min-width:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;touch-action:pan-y;scrollbar-width:none;background:linear-gradient(180deg,#070d1f 0%,#13224a 100%)}
+.mtn-scroll::-webkit-scrollbar{display:none}
+.mtn-scroll svg{display:block;width:100%}
+.mtn-scroll text{font-size:12px;font-weight:800;fill:var(--ink)}
+.sign rect{fill:#14233b;stroke:var(--line);stroke-width:1.5} .sign.top rect{stroke:var(--fire)}
+.st{fill:#6b7fb3} .st.on{fill:var(--fire)}
+.tent{fill:#7d8cb5} .lit .tent{fill:var(--hot)}
+.flame{fill:var(--fire);display:none;transform-box:fill-box;transform-origin:50% 100%} .lit .flame{display:inline;animation:flicker 1.2s ease-in-out infinite}
+.halo{fill:#ffd35a;opacity:.2}
+.gem{fill:var(--later);stroke:#fff;stroke-width:1.2;transform-box:fill-box;transform-origin:center;animation:bob 1.6s ease-in-out infinite}
+.gem.pop{animation:pop .45s ease-out forwards}
+@keyframes bob{50%{transform:translateY(-4px)}}
+@keyframes pop{to{transform:translateY(-26px) scale(2);opacity:0}}
+.mtn-map{position:absolute;top:8px;right:8px;width:44px;height:44px;background:rgba(13,24,48,.7);border-radius:12px;pointer-events:none}
+.mtn-banner{position:absolute;left:0;right:0;top:22%;text-align:center;font-weight:900;font-size:40px;color:var(--fire);text-shadow:0 3px 0 #2a1500,0 0 24px rgba(255,140,30,.7);opacity:0;pointer-events:none}
+.mtn-banner.go{animation:cheer 1.6s ease-out forwards}
+@keyframes cheer{0%{opacity:0;transform:scale(.4)}20%{opacity:1;transform:scale(1.15)}35%{transform:scale(1)}80%{opacity:1}100%{opacity:0;transform:translateY(-20px)}}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.tiles div{background:rgba(255,255,255,.08);border-radius:16px;padding:8px 6px;text-align:center}
+.tiles b{display:block;font-size:32px;font-weight:900;line-height:1.1;color:var(--fire);font-variant-numeric:tabular-nums}
+.tiles .sch b,.nums .sch b{color:var(--cool)}
+.tiles span{font-size:13px;color:var(--muted)}
+.pickup{text-align:center;font-weight:800;font-size:15px;color:var(--later)}
+.mtn .play{font-size:28px;padding:14px 40px;align-self:center}
+.mtn .row .play{align-self:auto}
+.done{font-weight:900;font-size:22px;text-transform:uppercase} .done b{color:var(--fire)}
+.nums{display:flex;flex-direction:column;align-items:flex-end;font-size:13px;color:var(--muted);line-height:1.25} .nums b{color:var(--fire);font-size:15px}
+.mtn .trio{text-align:center} .mtn .trio div{padding:8px 4px} .mtn .trio span{font-size:12px;line-height:1.2;display:block} .mtn .trio b{font-size:24px}
+.mtn .shelf{min-height:0}
+
 /* play */
 .dots{flex:1;display:flex;gap:4px}
 .dots i{flex:1;height:8px;border-radius:4px;background:rgba(255,255,255,.14)}
@@ -120,7 +155,7 @@ a{color:var(--cool)}
 <div id="app"></div>
 <script type="module">
 const boot = v => import("./game." + v + ".js");
-let loaded = "6cf09c01";
+let loaded = "96830758";
 const current = () => fetch("version.json?t=" + Date.now(), { cache: "no-store" }).then(r => r.json()).then(j => j.v);
 current().then(v => { loaded = v; return boot(v); }, () => boot(loaded));
 // A phone often brings the page back from memory instead of loading it again. When it comes back, check for a
