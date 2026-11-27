@@ -1,5 +1,5 @@
 // Word Burn engine: which word comes next, and what a reading does to it. No screen or microphone code here.
-import { LISTS, ALT } from "./words.f62832f7.js";
+import { LISTS, ALT } from "./words.822db273.js";
 
 export const ALLKEYS = [];
 { const seen = new Set(); for (const l of LISTS) for (const w of l.words) if (!seen.has(w)) { seen.add(w); ALLKEYS.push(w); } }

@@ -1,8 +1,8 @@
 // Word Burn: the screen, the voice and the fireworks. The rules of the game live in engine.js.
-import { LISTS, ALLKEYS, ROUND, fresh, matches, instantMs, pick, apply, newRound, counts, band, mergeState, cleanState } from "./engine.f62832f7.js";
+import { LISTS, ALLKEYS, ROUND, fresh, matches, instantMs, pick, apply, newRound, counts, band, mergeState, cleanState } from "./engine.822db273.js";
 
-const BUILD = "f62832f7";
-const SHORT = "v7";
+const BUILD = "822db273";
+const SHORT = "v8";
 const VERSION = "game " + SHORT + " (" + BUILD + ")";
 const OLDKEY = "wb.game.v1", SETKEY = "wb.settings.v1", DEVKEY = "wb.device.v2", stateKey = id => "wb.state." + id;
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -234,6 +234,7 @@ async function startRound() {
   let voice = voiceMode(), opening = null;
   if (voice) opening = openEars();                                    // straight from the tap
   say(" ", true);                                                     // phones only let a page speak later if it first speaks from a tap
+  { const last = store.get("wb.debug"), old = store.get("wb.debug.old") || []; if (last && last.length) { old.push(last); store.set("wb.debug.old", old.slice(-4)); } }   // keep the four games before this one too
   DBG.length = 0; dbg0 = performance.now(); dbg("game", { version: VERSION, voice, homeScreen: standalone(), instant: instantMs(S), level: S.level, device: navigator.userAgent });
   R = newRound(); T = { voice, outs: [], score: 0, combo: 0, maxCombo: 0, burned: [], later: [], fastest: null, stop: false, retried: {} };
   playScreen();
@@ -420,7 +421,7 @@ function grownUps() {
     h("p", { class: "small" }, "A word read right and instantly burns. Instant is set from the reader’s own speed, currently within " + secs(instantMs(S)) + (S.rt.length < 6 ? " (a starting value until it has timed a few reads)" : "") + "."),
     h("p", { class: "small" }, "Right but slow, or wrong, and the word comes back every few cards until it gets three instant reads in a row. After a miss the phone says the word and asks for it back. Burned words get one check a week later. It tries a harder word every third new card to find the reader’s edge."),
     h("p", { class: "small" }, "The voice never leaves the phone. With a family code, the player’s name and which words they have read are stored online so other phones can pick them up."),
-    h("button", { class: "ghost", onclick: async e => { const b = e.currentTarget, lines = store.get("wb.debug") || []; try { await navigator.clipboard.writeText("Word Burn " + VERSION + "\n" + lines.join("\n")); b.textContent = "Copied. Paste it to Claude."; } catch (x) { b.textContent = "Could not copy."; } } }, "Copy the last game’s record for Claude"),
+    h("button", { class: "ghost", onclick: async e => { const b = e.currentTarget, games = [...(store.get("wb.debug.old") || []), store.get("wb.debug") || []]; try { await navigator.clipboard.writeText("Word Burn " + VERSION + "\n" + games.map((g, i) => "--- game " + (i + 1) + " of " + games.length + " ---\n" + g.join("\n")).join("\n")); b.textContent = "Copied. Paste it to Claude."; } catch (x) { b.textContent = "Could not copy."; } } }, "Copy the last games’ record for Claude"),
     h("p", { class: "small muted" }, VERSION + " · ", h("a", { href: "test.html" }, "microphone test")),
     reset));
 }
