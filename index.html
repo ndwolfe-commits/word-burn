@@ -120,7 +120,7 @@ a{color:var(--cool)}
 <div id="app"></div>
 <script type="module">
 const boot = v => import("./game." + v + ".js");
-let loaded = "c6421a0d";
+let loaded = "7ca47659";
 const current = () => fetch("version.json?t=" + Date.now(), { cache: "no-store" }).then(r => r.json()).then(j => j.v);
 current().then(v => { loaded = v; return boot(v); }, () => boot(loaded));
 // A phone often brings the page back from memory instead of loading it again. When it comes back, check for a

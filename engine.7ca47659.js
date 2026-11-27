@@ -1,5 +1,5 @@
 // Word Burn engine: which word comes next, and what a reading does to it. No screen or microphone code here.
-import { LISTS, ALT, SCHOOL } from "./words.c6421a0d.js";
+import { LISTS, ALT, SCHOOL } from "./words.7ca47659.js";
 
 export const ALLKEYS = [];
 { const seen = new Set(); for (const l of LISTS) for (const w of l.words) if (!seen.has(w)) { seen.add(w); ALLKEYS.push(w); } }
@@ -50,6 +50,17 @@ export function grade(S, key, out, rt, today = day()) {
   return { before, after: w.s, burnedNow: before < 2 && w.s >= 2 };
 }
 
+// --- look-alike words: a new word is held back while one that looks like it is still being practised, or was the last card ---
+const GROUPS = ["though through thought tough", "was saw", "were where wear we're", "there their they're three", "then than them", "when went want", "how who", "on no", "of off",
+  "for from form", "what that", "with which", "will well", "came come", "here hear her", "quite quiet", "its it's", "your you're", "every very ever even"].map(g => g.split(" "));
+const near = (a, b) => {                                             // one letter added, dropped or changed, or the same letters in another order
+  if (a === b || Math.min(a.length, b.length) < 3) return false;
+  if (a.length === b.length) { let d = 0; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) d++; return d === 1 || [...a].sort().join("") === [...b].sort().join(""); }
+  if (Math.abs(a.length - b.length) !== 1) return false;
+  const [s, l] = a.length < b.length ? [a, b] : [b, a]; let i = 0; while (i < s.length && s[i] === l[i]) i++; return s.slice(i) === l.slice(i + 1);
+};
+export function alike(a, b) { a = a.toLowerCase(); b = b.toLowerCase(); return near(a, b) || GROUPS.some(g => g.includes(a) && g.includes(b)); }
+
 // --- choosing the next card ---
 // kinds: "side" a word in practice coming back, "check" a burned word due for its check,
 //        "win" a burned word, given straight after a stumble or when nothing else is left,
@@ -77,7 +88,8 @@ export function pick(S, R, today = day(), rand = Math.random) {
   const unseenLeft = ALLKEYS.some(k => !S.w[k] && !seenNow(k)) && side.length < HARD_CAP;
   if (due.length && (R.checks < MAX_CHECKS || !unseenLeft) && (R.i % 3 === 1 || !unseenLeft)) other = { key: due[0], kind: "check" };
   else if (side.length < HARD_CAP) {
-    const unseen = ALLKEYS.filter(k => !S.w[k] && !seenNow(k));
+    const held = k => side.some(x => alike(k, x)) || (R.prev != null && alike(k, R.prev));
+    const unseen = ALLKEYS.filter(k => !S.w[k] && !seenNow(k) && !held(k));
     if (unseen.length) {
       // Words of four letters or more carry the game. The very short ones ("I", "the") are swept up in a quick run at the end of each round.
       const long = unseen.filter(k => k.length >= 4), tiny = unseen.filter(k => k.length < 4);
