@@ -1,5 +1,5 @@
 // Word Burn engine: which word comes next, and what a reading does to it. No screen or microphone code here.
-import { LISTS, ALT, SCHOOL } from "./words.c4f7c60a.js";
+import { LISTS, ALT, SCHOOL } from "./words.05933cf5.js";
 
 export const ALLKEYS = [];
 { const seen = new Set(); for (const l of LISTS) for (const w of l.words) if (!seen.has(w)) { seen.add(w); ALLKEYS.push(w); } }
@@ -52,12 +52,17 @@ export function grade(S, key, out, rt, today = day()) {
 
 // --- choosing the next card ---
 // kinds: "side" a word in practice coming back, "check" a burned word due for its check,
+//        "win" a burned word, given straight after a stumble or when nothing else is left,
 //        "easy" the next unseen word of four letters or more, "probe" an unseen word out ahead, "sprint" a very short unseen word, "win" a burned word for an easy success.
-export function newRound() { return { i: 0, last: {}, lastSide: -9, newCount: 0, checks: 0, prev: null }; }
+export function newRound() { return { i: 0, last: {}, lastSide: -9, newCount: 0, checks: 0, prev: null, lift: false }; }
 export function pick(S, R, today = day(), rand = Math.random) {
   const seenNow = k => k in R.last, age = k => (k in R.last ? R.last[k] : -99);
   const side = ALLKEYS.filter(k => S.w[k] && S.w[k].s === 1);
   const ready = side.filter(k => R.i - age(k) >= 3).sort((a, b) => age(a) - age(b));
+  if (R.lift) {                                                       // straight after a stumble: a word the reader already owns, for a sure success
+    const own = ALLKEYS.filter(k => S.w[k] && S.w[k].s >= 2 && k !== R.prev), unseenOwn = own.filter(k => !seenNow(k)), from = unseenOwn.length ? unseenOwn : own;
+    if (from.length) return { key: from[Math.floor(rand() * from.length)], kind: "win" };
+  }
   const due = ALLKEYS.filter(k => S.w[k] && S.w[k].s >= 2 && S.w[k].d <= today && !seenNow(k)).sort((a, b) => S.w[a].d - S.w[b].d);
   let other = null;
   const unseenLeft = ALLKEYS.some(k => !S.w[k] && !seenNow(k)) && side.length < HARD_CAP;
@@ -96,6 +101,7 @@ export function apply(S, R, card, out, rt, today = day()) {
   if (card.kind === "probe" || card.kind === "easy") R.newCount++;
   if (card.kind === "side") R.lastSide = R.i;
   if (card.kind === "check") R.checks++;
+  R.lift = out === "miss" && card.kind !== "win";                     // one easy card after a miss, never two in a row
   R.last[card.key] = R.i; R.prev = card.key; R.i++;
   if (g.burnedNow) S.burned++;
   return g;
