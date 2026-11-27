@@ -1,9 +1,9 @@
 // Word Burn: the screen, the voice and the fireworks. The rules of the game live in engine.js.
-import { LISTS, SCHOOL, ALLKEYS, ROUND, fresh, matches, hears, learn, instantMs, pick, apply, newRound, counts, band, mergeState, cleanState } from "./engine.70181f69.js";
-import { SUMMIT, W as MW, nextStop, trail, scene, walkPlan, gemSteps, gemsMarkup, climberAt } from "./mountain.70181f69.js";
+import { LISTS, SCHOOL, ALLKEYS, ROUND, fresh, matches, hears, learn, instantMs, pick, apply, newRound, counts, band, mergeState, cleanState } from "./engine.54f35c2b.js";
+import { SUMMIT, W as MW, nextStop, trail, scene, walkPlan, gemSteps, gemsMarkup, climberAt } from "./mountain.54f35c2b.js";
 
-const BUILD = "70181f69";
-const SHORT = "v16";
+const BUILD = "54f35c2b";
+const SHORT = "v17";
 const VERSION = "game " + SHORT + " (" + BUILD + ")";
 const OLDKEY = "wb.game.v1", SETKEY = "wb.settings.v1", DEVKEY = "wb.device.v2", stateKey = id => "wb.state." + id;
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -11,7 +11,7 @@ const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 const NATIVE = !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.ears);
 const tell = m => { try { window.webkit.messageHandlers.ears.postMessage(m); } catch (e) {} };
 const store = { get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} } };
-let P = Object.assign({ mode: "voice", sound: true }, store.get(SETKEY) || {});
+let P = Object.assign({ mode: "voice", sound: true, mic: "normal" }, store.get(SETKEY) || {});
 // This phone's players, who is playing now, and the family code if it has joined one.
 let D = Object.assign({ players: [], active: null, family: null }, store.get(DEVKEY) || {});
 let S = fresh();
@@ -169,8 +169,10 @@ async function recoverEars() {
   return true;
 }
 async function wireMic() {
-  ears.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: true, autoGainControl: false } });
+  // A trial, switched on in Settings: let the phone turn a quiet or distant voice up by itself. Off, the microphone is left raw.
+  ears.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: true, autoGainControl: P.mic === "boost" } });
   const tr = ears.stream.getAudioTracks()[0];
+  try { const g = tr.getSettings(); dbg("microphone", { asked: P.mic, turnsItselfUp: g.autoGainControl, noiseSuppression: g.noiseSuppression }); } catch (e) {}
   if (tr) { tr.onmute = () => dbg("microphone muted"); tr.onunmute = () => dbg("microphone back"); tr.onended = () => dbg("microphone ended"); }
   if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
   if (actx.state !== "running") await actx.resume();
@@ -257,7 +259,7 @@ async function startRound() {
   if (voice) opening = openEars();                                    // straight from the tap
   say(" ", true);                                                     // phones only let a page speak later if it first speaks from a tap
   { const last = store.get("wb.debug"), old = store.get("wb.debug.old") || []; if (last && last.length) { old.push(last); store.set("wb.debug.old", old.slice(-4)); } }   // keep the four games before this one too
-  DBG.length = 0; dbg0 = performance.now(); dbg("game", { version: VERSION, voice, homeScreen: standalone(), instant: instantMs(S), level: S.level, device: navigator.userAgent });
+  DBG.length = 0; dbg0 = performance.now(); dbg("game", { version: VERSION, voice, mic: P.mic, homeScreen: standalone(), instant: instantMs(S), level: S.level, device: navigator.userAgent });
   R = newRound(); T = { voice, outs: [], score: 0, combo: 0, maxCombo: 0, burned: [], later: [], fastest: null, stop: false, retried: {}, from: stepsNow(), sideBefore: sideWords() };
   playScreen();
   if (voice) {
@@ -526,6 +528,8 @@ function grownUps() {
     S.log.length ? [h("h2", null, "Recent misses and what the phone heard"), h("p", { class: "small" }, S.log.slice(-10).reverse().map(r => show(r.k) + " → “" + r.heard + "”").join(", "))] : null,
     h("h2", null, "How answers are checked"),
     SR || NATIVE ? h("div", { class: "seg" }, opt("mode", "voice", "The phone listens"), opt("mode", "tap", "A grown-up taps")) : h("p", { class: "small muted" }, "This browser has no dictation, so a grown-up taps Got it or Not yet."),
+    (SR && !NATIVE) ? [h("h2", null, "Microphone (a trial)"), h("div", { class: "seg" }, opt("mic", "normal", "Normal"), opt("mic", "boost", "Hears quieter voices")),
+      h("p", { class: "small muted" }, "If the reader has to sit close and speak up, try Hears quieter voices. It asks the phone to turn a quiet voice up. Switch back if it starts mishearing or cutting in early.")] : null,
     h("h2", null, "Sounds"), h("div", { class: "seg" }, opt("sound", true, "On"), opt("sound", false, "Off")),
     h("h2", null, "How it works"),
     h("p", { class: "small" }, "A word read right and instantly burns. Instant is set from the reader’s own speed, currently within " + secs(instantMs(S)) + (S.rt.length < 6 ? " (a starting value until it has timed a few reads)" : "") + "."),
